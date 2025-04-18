@@ -161,6 +161,9 @@ endif()
 if(MALLOB_APP_SATWITHPRE)
     register_mallob_app("satwithpre")
 endif()
+if (MALLOB_APP_CBMC)
+    register_mallob_app("cbmc")
+endif()
 # Include further applications here:
 #if(MALLOB_APP_YOURAPP)
 #    register_mallob_app("yourapp")
@@ -189,32 +192,13 @@ target_link_libraries(mallob_corepluscomm ${MPI_CXX_LIBRARIES} ${MPI_CXX_LINK_FL
 target_link_directories(mallob_corepluscomm PUBLIC ${BASE_LINK_DIRS})
 
 
-# Sources for libmallob.a
-set(MALLOB_EXECUTABLE_SOURCES
-    src/core/client.cpp 
-    src/core/worker.cpp 
-    CACHE INTERNAL "")
-
-# Create the static library libmallob.a
-add_library(mallob STATIC ${MALLOB_EXECUTABLE_SOURCES})
-target_include_directories(mallob PRIVATE ${BASE_INCLUDES})
-target_compile_options(mallob PRIVATE ${BASE_COMPILEFLAGS})
-target_link_libraries(mallob mallob_corepluscomm)
-
 # Executables
 
 # Mallob main executable
-add_executable(mallob_exec ${MALLOB_EXECUTABLE_SOURCES} src/main.cpp)
-set_target_properties(mallob_exec PROPERTIES OUTPUT_NAME mallob)
-target_include_directories(mallob_exec PRIVATE ${BASE_INCLUDES})
-target_compile_options(mallob_exec PRIVATE ${BASE_COMPILEFLAGS})
-target_link_libraries(mallob_exec mallob_corepluscomm)
-
-# Mallob main executable
-# add_executable(mallob src/core/client.cpp src/core/worker.cpp src/main.cpp)
-# target_include_directories(mallob PRIVATE ${BASE_INCLUDES})
-# target_compile_options(mallob PRIVATE ${BASE_COMPILEFLAGS})
-# target_link_libraries(mallob mallob_corepluscomm)
+add_executable(mallob src/core/client.cpp src/core/worker.cpp src/main.cpp)
+target_include_directories(mallob PRIVATE ${BASE_INCLUDES})
+target_compile_options(mallob PRIVATE ${BASE_COMPILEFLAGS})
+target_link_libraries(mallob mallob_corepluscomm)
 
 # Mallob process dispatcher
 add_executable(mallob_process_dispatcher src/app/sat/main_dispatch.cpp)
