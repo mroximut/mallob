@@ -57,54 +57,66 @@ public:
       // {
       //   LOG(V2_INFO, "%s\n", message.c_str());  
       // }
-      std::string cbmcOptionsStr = _params.cbmcOptions();
+      std::string cbmcOptionsStr = "";
+      int size_options = 0;
       std::vector<std::string> cbmcOptions;
-      size_t start = 0, end = 0;
-      while ((end = cbmcOptionsStr.find(',', start)) != std::string::npos) {
-          cbmcOptions.push_back(cbmcOptionsStr.substr(start, end - start));
-          start = end + 1;
-      }
-      cbmcOptions.push_back(cbmcOptionsStr.substr(start));
 
-      int argc = 4 + cbmcOptions.size();
+      if (_params.cbmcOptions().empty()) {
+          LOG(V0_CRIT, "No additional CBMC options provided!\n");
+      } else {
+          cbmcOptionsStr = _params.cbmcOptions();
+          
+          size_t start = 0, end = 0;
+          while ((end = cbmcOptionsStr.find(',', start)) != std::string::npos) {
+              cbmcOptions.push_back(cbmcOptionsStr.substr(start, end - start));
+              start = end + 1;
+          }
+          cbmcOptions.push_back(cbmcOptionsStr.substr(start));
+          size_options = cbmcOptions.size();
+      }
+      
+      int argc = 4 + size_options;
       const char* argv[argc];
       argv[0] = strdup("cbmc");
       argv[1] = strdup(_filename.c_str());
       argv[2] = strdup("--verbosity");
       argv[3] = strdup("9");
-      for (size_t i = 0; i < cbmcOptions.size(); i++) {
+      
+      if (size_options > 0) {
+        for (size_t i = 0; i < size_options; i++) {
           argv[i+4] = strdup((cbmcOptions[i]).c_str());
+        }
       }
 
       cbmc_parse_optionst parse_options(argc, argv);
       
-      // Redirect stdout to capture CBMC output
-      std::stringstream buffer;
-      std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
+      // // Redirect stdout to capture CBMC output
+      // std::stringstream buffer;
+      // std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
 
       // Run CBMC
       int res = parse_options.main();
 
-      // Restore stdout
-      std::cout.rdbuf(old);
+      // // Restore stdout
+      // std::cout.rdbuf(old);
 
-      // Extract runtime information if available
-      std::string bufferStr = buffer.str();
+      // // Extract runtime information if available
+      // std::string bufferStr = buffer.str();
 
-      // Look for Runtime Solver information
-      std::size_t runtimePos = bufferStr.find("Runtime Solver:");
-      if (runtimePos != std::string::npos) {
-        std::istringstream lineStream(bufferStr.substr(runtimePos));
-        std::string label;
-        double runtime;
-        lineStream >> label >> label >> runtime; 
+      // // Look for Runtime Solver information
+      // std::size_t runtimePos = bufferStr.find("Runtime Solver:");
+      // if (runtimePos != std::string::npos) {
+      //   std::istringstream lineStream(bufferStr.substr(runtimePos));
+      //   std::string label;
+      //   double runtime;
+      //   lineStream >> label >> label >> runtime; 
         
-        LOG(V2_INFO, "Extracted solver runtime: %f seconds\n", runtime);
-      } else {
+      //   LOG(V2_INFO, "Extracted solver runtime: %f seconds\n", runtime);
+      // } else {
         
-      }
+      // }
    
-      LOG(V2_INFO, "CBMC output----------------------------------\n%s\n", buffer.str().c_str());
+      // LOG(V2_INFO, "CBMC output----------------------------------\n%s\n", buffer.str().c_str());
      
       for (int i = 0; i < argc; i++) {
         free((void*)argv[i]);
