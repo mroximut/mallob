@@ -7,4 +7,6 @@
 // Application-specific program options for SAT solving.
 // memberName                               short option name, long option name          default   min  max
 
-OPTION_GROUP(grpAppCBMC, "app/cbmc", "CBMC options")
+OPTION_GROUP(grpAppCbmc, "app/cbmc", "CBMC options")
+
+OPT_STRING(cbmcOptions, "cbmc-opts", "", "", "CBMC options to be passed to the solver")

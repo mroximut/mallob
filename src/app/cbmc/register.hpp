@@ -31,6 +31,19 @@ void register_mallob_app_cbmc() {
         // Job solution formatter
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
+            
+            json.push_back({
+                {"timeOfSubmission", stat.timeOfSubmission},
+                {"timeOfScheduling", stat.timeOfScheduling},
+                {"parseTime", stat.parseTime},
+                {"schedulingTime", stat.schedulingTime},
+                {"processingTime", stat.processingTime},
+                {"totalResponseTime", stat.totalResponseTime},
+                {"usedWallclockSeconds", stat.usedWallclockSeconds},
+                {"usedCpuSeconds", stat.usedCpuSeconds},
+                {"latencyOf1stVolumeUpdate", stat.latencyOf1stVolumeUpdate}
+            });
+            LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
             return json;
         }
     );
