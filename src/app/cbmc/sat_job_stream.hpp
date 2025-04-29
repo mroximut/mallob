@@ -68,6 +68,7 @@ public:
         nlohmann::json copy(_json_base);
         StaticStore<std::vector<int>>::insert(_json_base["name"].get<std::string>(), std::move(newLiterals));
         copy["internalliterals"] = _json_base["name"].get<std::string>();
+        //copy["literals"] = std::move(newLiterals);
         copy["assumptions"] = assumptions;
         if (!descriptionLabel.empty()) {
             copy["description-id"] = descriptionLabel;

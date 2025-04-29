@@ -87,16 +87,21 @@ void Client::readIncomingJobs() {
                 auto lock = _done_job_lock.getLock();
                 for (int jobId : data.dependencies) {
                     if (!_done_jobs.count(jobId)) {
+                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : #%i not done!\n", data.description->getId(), jobId);
                         dependenciesSatisfied = false;
                         break;
                     }
                 }
                 if (data.description->isIncremental() && data.description->getRevision() > 0) {
                     // Check if the precursor of this incremental job is already done
-                    if (!_done_jobs.count(data.description->getId()))
+                    if (!_done_jobs.count(data.description->getId())) {
+                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : inc. precursor not done!\n", data.description->getId());
                         dependenciesSatisfied = false; // no job with this ID is done yet
-                    else if (data.description->getRevision() != _done_jobs[data.description->getId()].revision+1)
+                    }
+                    else if (data.description->getRevision() != _done_jobs[data.description->getId()].revision+1) {
+                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : inc. precursor has wrong revision!\n", data.description->getId());
                         dependenciesSatisfied = false; // job with correct revision not done yet
+                    }
                 }
             }
             if (!dependenciesSatisfied) {
@@ -686,6 +691,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
         }
     }
 
+    int id = jobId;
     if (_json_interface) {
         JobResult* resultPtr = new JobResult(std::move(jobResult));
         _pending_subtasks.emplace_back();
@@ -704,7 +710,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     }
 
     Logger::getMainInstance().flush();
-    finishJob(jobId, /*hasIncrementalSuccessors=*/desc.isIncremental());
+    finishJob(id, /*hasIncrementalSuccessors=*/desc.isIncremental());
 }
 
 void Client::handleAbort(MessageHandle& handle) {
@@ -739,6 +745,8 @@ void Client::handleAbort(MessageHandle& handle) {
 
 void Client::finishJob(int jobId, bool hasIncrementalSuccessors) {
 
+    LOG(V1_WARN, "finishJob(%i, %i)\n", jobId, hasIncrementalSuccessors);
+
     if (!_active_jobs.count(jobId)) {
         // try to fetch client-side job
         for (auto it = _done_client_side_jobs.begin(); it != _done_client_side_jobs.end(); ++it) {
@@ -761,6 +769,7 @@ void Client::finishJob(int jobId, bool hasIncrementalSuccessors) {
         }
     } else {
         auto lock = _done_job_lock.getLock();
+        LOG(V1_WARN, "Adding #%i rev. %i to done jobs\n", jobId, _active_jobs[jobId]->getRevision());
         _done_jobs[jobId] = DoneInfo{_active_jobs[jobId]->getRevision(), _active_jobs[jobId]->getChecksum()};
     }
 
