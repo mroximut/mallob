@@ -67,6 +67,10 @@ public:
           cbmcOptionsStr = _params.cbmcOptions();
           
           size_t start = 0, end = 0;
+          
+          if (cbmcOptionsStr.back() == ',') {
+            cbmcOptionsStr.pop_back();
+          }
           while ((end = cbmcOptionsStr.find(',', start)) != std::string::npos) {
               cbmcOptions.push_back(cbmcOptionsStr.substr(start, end - start));
               start = end + 1;
@@ -87,8 +91,13 @@ public:
           argv[i+4] = strdup((cbmcOptions[i]).c_str());
         }
       }
-
+      LOG(V2_INFO, "CBMC options: %s\n", cbmcOptionsStr.c_str());
+      // Log all arguments
+      for (int i = 0; i < argc; i++) {
+        LOG(V2_INFO, "CBMC argv[%d]: %s\n", i, argv[i]);
+      }
       cbmc_parse_optionst parse_options(argc, argv);
+      //cbmc_parse_optionst parse_options2(argc, argv);
       
       // // Redirect stdout to capture CBMC output
       // std::stringstream buffer;
@@ -96,6 +105,7 @@ public:
 
       // Run CBMC
       int res = parse_options.main();
+      //int res2 = parse_options2.main(); 
 
       // // Restore stdout
       // std::cout.rdbuf(old);
@@ -125,7 +135,7 @@ public:
       JobResult r;
       r.id = _desc.getId();
       r.revision = 0;
-      r.result = 0;
+      r.result = res;
       
       return r;
     }

@@ -33,15 +33,21 @@ void register_mallob_app_cbmc() {
             auto json = nlohmann::json::array();
             
             json.push_back({
-                {"timeOfSubmission", stat.timeOfSubmission},
-                {"timeOfScheduling", stat.timeOfScheduling},
-                {"parseTime", stat.parseTime},
-                {"schedulingTime", stat.schedulingTime},
-                {"processingTime", stat.processingTime},
-                {"totalResponseTime", stat.totalResponseTime},
-                {"usedWallclockSeconds", stat.usedWallclockSeconds},
-                {"usedCpuSeconds", stat.usedCpuSeconds},
-                {"latencyOf1stVolumeUpdate", stat.latencyOf1stVolumeUpdate}
+                {"CBMCexitcode", result.result},         
+                {"result", result.result == 10 ? "VERIFICATION FAILED" : 
+                    (result.result == 0 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
+                {"application", "CBMC"},
+                {"stats", {
+                    {"timeOfSubmission", stat.timeOfSubmission},
+                    {"timeOfScheduling", stat.timeOfScheduling},
+                    {"parseTime", stat.parseTime},
+                    {"schedulingTime", stat.schedulingTime},
+                    {"processingTime", stat.processingTime},
+                    {"totalResponseTime", stat.totalResponseTime},
+                    {"usedWallclockSeconds", stat.usedWallclockSeconds},
+                    {"usedCpuSeconds", stat.usedCpuSeconds},
+                    {"latencyOf1stVolumeUpdate", stat.latencyOf1stVolumeUpdate}
+                }},
             });
             LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
             return json;
