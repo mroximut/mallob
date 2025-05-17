@@ -79,16 +79,16 @@ public:
           size_options = cbmcOptions.size();
       }
       
-      int argc = 4 + size_options;
+      int argc = 2 + size_options;
       const char* argv[argc];
       argv[0] = strdup("cbmc");
       argv[1] = strdup(_filename.c_str());
-      argv[2] = strdup("--verbosity");
-      argv[3] = strdup("9");
+      //argv[2] = strdup("--verbosity");
+      //argv[3] = strdup("9");
       
       if (size_options > 0) {
         for (size_t i = 0; i < size_options; i++) {
-          argv[i+4] = strdup((cbmcOptions[i]).c_str());
+          argv[i+2] = strdup((cbmcOptions[i]).c_str());
         }
       }
       LOG(V2_INFO, "CBMC options: %s\n", cbmcOptionsStr.c_str());
@@ -104,7 +104,27 @@ public:
       // std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
 
       // Run CBMC
+      // Redirect stdout to capture CBMC output
+      std::stringstream buffer;
+      std::stringstream buffer_err;
+      std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
+      std::streambuf* old_err = std::cerr.rdbuf(buffer_err.rdbuf());
+      
       int res = parse_options.main();
+      
+      // Restore stdout/stderr and get output
+      std::cout.rdbuf(old);
+      std::cerr.rdbuf(old_err);
+      std::string cbmc_output = buffer.str() + buffer_err.str() + "\n" + "CBMCexitcode:" + std::to_string(res) + "\n";
+
+      if (!_params.s2f().empty()) {
+        std::ofstream outputFile(_params.s2f());
+        outputFile << cbmc_output;
+        outputFile.close();
+      } else {
+        LOG(V2_INFO, "CBMC output----------------------------------\n%s\n", cbmc_output.c_str());
+        LOG(V2_INFO, "End of CBMC output----------------------------------\n");
+      }
       //int res2 = parse_options2.main(); 
 
       // // Restore stdout

@@ -10,3 +10,4 @@
 OPTION_GROUP(grpAppCbmc, "app/cbmc", "CBMC options")
 
 OPT_STRING(cbmcOptions, "cbmc-opts", "", "", "CBMC options to be passed to the solver")
+OPT_STRING(s2f, "s2f", "", "", "file, where the CBMC output will be stored")
