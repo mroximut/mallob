@@ -33,9 +33,9 @@ void register_mallob_app_cbmc() {
             auto json = nlohmann::json::array();
             
             json.push_back({
-                {"CBMCexitcode", result.result},         
+                {"CBMCexitcode", result.result == 20 ? 0 : result.result},         
                 {"result", result.result == 10 ? "VERIFICATION FAILED" : 
-                    (result.result == 0 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
+                    (result.result == 20 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
                 {"application", "CBMC"},
                 {"stats", {
                     {"timeOfSubmission", stat.timeOfSubmission},
