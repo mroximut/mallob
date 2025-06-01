@@ -2,7 +2,7 @@
 # tool
 
 TOOL_BINARY=./lib/cbmc/src/cbmc/cbmc
-TOOL_NAME=CBMC_MALLOB
+TOOL_NAME=CBMC
 FIND_OPTIONS=""
 
 # function to run the tool
@@ -25,22 +25,40 @@ run()
   export GMON_OUT_PREFIX="cbmc_$gmon_suffix"
   
   # Replace spaces with commas in PROPERTY for mallob
-  echo "PROPERTY: $PROPERTY"
-  PROPERTY=$(echo "$PROPERTY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   PROPERTY=$(echo "$PROPERTY" | sed "s/ /,/g")
-  echo "PROPERTY: $PROPERTY"
 
 timeout 875 bash -c ' \
 \
-ulimit -v 64000000 ; \
+#ulimit -v 25000000 ; \
 \
-echo "Running mallob" >> $LOG.latest ; \
-ec=42 ; \
-./build/mallob -t=16 -mono-app=CBMC -mono=$LOG.bin -v=4 -compress-models -unwind-loops -s2f=$LOG.latest -cbmc-opts=--no-standard-checks,--verbosity,9,--slice-formula,--stop-on-fail,--object-bits,$OBJ_BITS,$PROPERTY ; \
-if grep -q "EC=" $LOG.latest; then ec=$(grep -o "EC=[0-9]*" $LOG.latest | tail -n1 | cut -d'=' -f2 | tr -d '[:space:]'); else ec=1; fi ; \
-#echo "Exit code: $ec" ; \
-mv $LOG.latest $LOG.ok ; \
-#echo "EC=$ec" >> $LOG.ok ; \
+EC=42 ; \
+ECTEMP=42 ; \
+for c in 2 6 12 17 21 40 200 400 1025 2049 268435456 ; do \
+echo "Unwind: $c" >> $LOG.latest ; \
+./build/mallob -t=16 -mono-app=CBMC -mono=$LOG.bin -v=4 -compress-models -s2f=$LOG.latest -cbmc-opts=--no-standard-checks,--verbosity,9,--graphml-witness,$LOG.witness,--slice-formula,--unwind,$c,--stop-on-fail,--object-bits,$OBJ_BITS,$PROPERTY ; \
+if grep -q "CBMCexitcode:" $LOG.latest; then ec=$(grep -o "CBMCexitcode:[0-9]*" $LOG.latest | tail -n1 | cut -d':' -f2 | tr -d '[:space:]'); else ec=1; fi ; \
+echo "Exit code: $ec" ; \
+if [ $ec -eq 0 ] ; then \
+if ! tail -n 10 $LOG.latest | grep -q "^VERIFICATION SUCCESSFUL$" ; then ec=1 ; else \
+./build/mallob -t=16 -mono-app=CBMC -mono=$LOG.bin -v=4 -compress-models -s2f=$LOG.temp -cbmc-opts=--no-standard-checks,--verbosity,9,--slice-formula,--unwinding-assertions,--unwind,$c,--stop-on-fail,--object-bits,$OBJ_BITS,$PROPERTY ; \
+if grep -q "CBMCexitcode:" $LOG.temp; then ectemp=$(grep -o "CBMCexitcode:[0-9]*" $LOG.temp | tail -n1 | cut -d':' -f2 | tr -d '[:space:]'); else ectemp=1; fi ; \
+echo "Exit code (unwinding): $ectemp" ; \
+rm -f $LOG.temp ; \
+if [ $ectemp -ne 0 ] ; then ec=42 ; fi ; \
+fi ; \
+fi ; \
+if [ $ec -eq 10 ] ; then \
+if ! tail -n 10 $LOG.latest | grep -q "^VERIFICATION FAILED$" ; then ec=1 ; fi ; \
+fi ; \
+\
+case $ec in \
+0) EC=0 ; mv $LOG.latest $LOG.ok ; echo "EC=$EC" >> $LOG.ok ; break ;; \
+10) EC=10 ; mv $LOG.latest $LOG.ok ; echo "EC=$EC" >> $LOG.ok ; break ;; \
+42) EC=42 ; mv $LOG.latest $LOG.ok ; echo "EC=$EC" >> $LOG.ok ;; \
+*) if [ $EC -ne 0 ] ; then EC=$ec ; mv $LOG.latest $LOG.ok ; fi ; echo "EC=$EC" >> $LOG.ok ; break ;; \
+esac ; \
+\
+done \
 '
   if [ ! -s $LOG.ok ] ; then
     mv $LOG.latest $LOG.ok ; echo "EC=42" >> $LOG.ok

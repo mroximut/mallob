@@ -31,9 +31,16 @@ void register_mallob_app_cbmc() {
         // Job solution formatter
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
+
+            // if (!params.s2f().empty())
+            // {
+            //     std::ofstream outputFile(params.s2f(), std::ios::app);
+            //     outputFile << "\nEC=" + std::to_string(result.result == 20 ? 0 : result.result) + "\n";
+            //     outputFile.close();
+            // }
             
             json.push_back({
-                {"CBMCexitcode", result.result == 20 ? 0 : result.result},         
+                {"EXITCODE", result.result == 20 ? 0 : result.result},         
                 {"result", result.result == 10 ? "VERIFICATION FAILED" : 
                     (result.result == 20 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
                 {"application", "CBMC"},
