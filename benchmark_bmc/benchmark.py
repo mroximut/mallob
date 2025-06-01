@@ -162,13 +162,32 @@ def run_with_args(cmd_args: List[str], cwd: str) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             cwd=cwd,
-            env=env
+            env=env,
+            timeout=TIMEOUT,
         )
+
+    except subprocess.TimeoutExpired as e:
+        print(f"Error running command: {' '.join(cmd_args)}")
+        print(f"Error: {str(e)}")
+        metrics['exit_code'] = "TIMEOUT=" + str(TIMEOUT)
+        metrics['last_line'] = f"Error: {str(e)}"
+        cleanup()
+        return metrics
+
+    except KeyboardInterrupt:
+        print("Process interrupted by user.")
+        cleanup()
+        exit(0)
+
     except Exception as e:
         print(f"Error running command: {' '.join(cmd_args)}")
         print(f"Error: {str(e)}")
         metrics['exit_code'] = "ERROR"
         metrics['last_line'] = f"Error: {str(e)}"
+        cleanup()
+        return metrics
+
+
     end_time = time.time()
     total_time = end_time - start_time
     #print(result)
@@ -193,7 +212,8 @@ def run_with_args(cmd_args: List[str], cwd: str) -> Dict[str, Any]:
                 metrics['number_of_clauses'].append(int(line.split()[2]))
 
         if output_lines:
-            metrics['last_line'] = output_lines[-1]
+            n = min(5, len(output_lines))
+            metrics['last_line'] = " ".join(output_lines[-n:])
 
     metrics['total_runtime'] = total_time
 
@@ -330,34 +350,52 @@ def extract_benchmark_set(benchmark_xml_path: str) -> List[BenchmarkSet]:
     return pairs
 
 def cleanup():
-    commands = ["killall cbmc",
-    "killall MainThread",
-    "killall mpirun",
-    "killall mallob",
-    "killall mallob_sat_process"]
+    # commands = ["killall cbmc",
+    # "killall MainThread",
+    # "killall mpirun",
+    # "killall mallob",
+    # "killall mallob_sat_process"]
+    commands = ["pkill -f cbmc",
+               "pkill -f MainThread",
+               "pkill -f mpirun",
+               "pkill -f mallob",
+               "pkill -f mallob_sat_process",
+               "tmux kill-session -t mallob_filesystem"]
     for command in commands:
         try:
             subprocess.run(command, shell=True, check=True)
         except subprocess.CalledProcessError as e:
             #print(f"Error executing command: {command}. Error: {str(e)}")
             pass
+    time.sleep(2)
 
 def start_mallob_filesystem(path):
-    mallob_cmd = ["build/mallob", "-t=32", "-compress-models"]
-    mallob_process = subprocess.Popen(
-        mallob_cmd,
-        cwd=path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    print(f"Started Mallob process with PID {mallob_process.pid}")
+    mallob_cmd = "spack env activate myenv && ulimit -v 64000000 && build/mallob -t=32 -compress-models"
+    # mallob_process = subprocess.Popen(
+    #     mallob_cmd,
+    #     cwd=path,
+    #     stdout=subprocess.PIPE,
+    #     stderr=subprocess.PIPE,
+    #     shell=True
+    # )
+
+    def start_in_tmux(session_name, command, cwd=None):
+        tmux_cmd = [
+            "tmux", "new-session", "-d", "-s", session_name,
+            f" \" cd {cwd} && {command} \" " if cwd else command
+        ]
+        subprocess.run(" ".join(tmux_cmd), shell=True, check=True)
+
+    start_in_tmux("mallob_filesystem", mallob_cmd, cwd=path)
+    print(f"Started Mallob process")
     time.sleep(5)
 
 
 def main(wrapper_path, set_file_path, global_property_file, result_csv_file, filesystem=False, MALLOB_DIR=None):
 
     batch_size = 1
-    file_per_set = 1
+    start_index = 10
+    file_per_set = 30
 
     parsed_set_data = parse_set_file(set_file_path)
 
@@ -365,71 +403,56 @@ def main(wrapper_path, set_file_path, global_property_file, result_csv_file, fil
 
     random.shuffle(parsed_set_data)
 
-    for i in range(0, min(file_per_set, len(parsed_set_data)), batch_size):
-        try:
+    if min(file_per_set, len(parsed_set_data) < start_index):
+        print(f"Start index {start_index} is greater than the number of files in the set.")
+        return
 
-            current_batch = parsed_set_data[i:min(i+batch_size, len(parsed_set_data))]
-            print(f"Processing batch {i//batch_size + 1} of {(len(parsed_set_data) + batch_size - 1) // batch_size}...")
+    for i in range(start_index, min(file_per_set, len(parsed_set_data)), batch_size):
 
-            if filesystem:
-                cleanup()
-                start_mallob_filesystem(MALLOB_DIR)
+        current_batch = parsed_set_data[i:min(i+batch_size, len(parsed_set_data))]
+        print(f"Processing batch {i//batch_size + 1} of {(len(parsed_set_data) + batch_size - 1) // batch_size}...")
 
-            results = run_wrapper(wrapper_path, current_batch, global_property_file)
-            dump_into_csv(results, result_csv_file)
-            cleanup()
-
-        except KeyboardInterrupt:
-            print("Process interrupted by user.")
-            cleanup()
-            exit(0)
-
-        except Exception as e:
-            print(f"Error running {wrapper_path} on {current_batch}: {str(e)}")
-            cleanup()
-            continue
-
-
-def main_yml(wrapper_path, yml_file, result_csv_file, filesystem=False, MALLOB_DIR=None):
-    
-    parsed_yml_data = parse_yml_file(yml_file)
-
-    try:
         if filesystem:
             cleanup()
             start_mallob_filesystem(MALLOB_DIR)
 
-        results = run_wrapper(wrapper_path, [parsed_yml_data], None)
-
+        results = run_wrapper(wrapper_path, current_batch, global_property_file)
         dump_into_csv(results, result_csv_file)
         cleanup()
 
-    except KeyboardInterrupt:
-        print("Process interrupted by user.")
-        cleanup()
-        exit(0)
 
-    except Exception as e:
-        print(f"Error running {wrapper_path} on {parsed_yml_data}: {str(e)}")
-        cleanup()
+def main_yml(wrapper_path, yml_file, result_csv_file, filesystem=False, MALLOB_DIR=None):
+
+    parsed_yml_data = parse_yml_file(yml_file)
+
+    for property_file in list(parsed_yml_data.task_dict['property_files'].keys()):
+        if "no-overflow" not in property_file:
+            continue
+        if filesystem:
+            cleanup()
+            start_mallob_filesystem(MALLOB_DIR)
+        results = run_wrapper(wrapper_path, [parsed_yml_data], global_property_file=property_file)
+        dump_into_csv(results, result_csv_file)
+
+    cleanup()
 
 def run_benchmark_defs():
 
-    #BASE_DIR = '/nfs/home/omutlu'
-    BASE_DIR = '/home/oguz/Desktop/hiwi_code'
+    BASE_DIR = '/nfs/home/omutlu'
+    #BASE_DIR = '/home/oguz/Desktop/hiwi_code'
     BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
     CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
     #CBMC_570_WRAPPER = BASE_DIR + '/cbmc_570/cbmc/cbmc-wrapper'
     MALLOB_WRAPPER = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mallob-wrapper'
     FILESYSTEM_WRAPPER = BASE_DIR + '/cbmc_mallob_filesystem/cbmc/cbmc-wrapper'
-    RESULTS_DIR = BASE_DIR + '/cbmc_mallob_monolithic/mallob/results/'
+    RESULTS_DIR = BASE_DIR + '/results/'
     MALLOB_DIR = BASE_DIR + '/mallob/'
 
     TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
 
     benchmark_sets = (extract_benchmark_set(BASE_DIR + '/benchmark/benchmark-defs/cbmc.xml'))
 
-    print(benchmark_sets)
+    #print(benchmark_sets)
 
     # to_test = ["NoOverflows-Main", "ReachSafety-ECA", "ReachSafety-Floats", "ReachSafety-Fuzzle",
     #            "ReachSafety-Heap", "ReachSafety-Recursive", "ReachSafety-Sequentialized", "ReachSafety-XCSP", "SoftwareSystems-coreutils-MemSafety",
@@ -437,34 +460,36 @@ def run_benchmark_defs():
     #            ]
 
 
-    #benchmark_sets = [benchmark_set for benchmark_set in benchmark_sets if benchmark_set.task_name] #in to_test]
-    #benchmark_sets = benchmark_sets[:1]
+    benchmark_sets = [benchmark_set for benchmark_set in benchmark_sets if "MemSafety" in benchmark_set.task_name or "NoOverflows" in benchmark_set.task_name] #in to_test]
+    print(benchmark_sets)
+    benchmark_sets = benchmark_sets
 
     cleanup()
     print("Starting benchmark runs...")
     for benchmark_set in benchmark_sets:
-        for tool in ['CBMC', 'MALLOB', 'MALLOB-FILESYSTEM']:
+        #for tool in ['CBMC', 'MALLOB']: # 'MALLOB-FILESYSTEM']:
+        for tool in ['MALLOB-FILESYSTEM']:
             set_file = BENCHMARK_DIR + benchmark_set.set_file
             prop_file = BENCHMARK_DIR + benchmark_set.property_file
             result_csv_file = RESULTS_DIR + tool + '_' + benchmark_set.task_name + '.csv'
             wrapper = TOOLS[tool]
 
             print(f"Running {tool} on {benchmark_set.task_name} with set file {set_file} and property file {prop_file}")
-        
+
             filesystem = True if tool == 'MALLOB-FILESYSTEM' else False
 
             main(wrapper, set_file, prop_file, result_csv_file, filesystem, MALLOB_DIR)
-            
+
             print(f"Finished running {tool} on {benchmark_set.task_name}")
-        
+
 
     print("All tasks completed.")
     cleanup()
 
 if __name__ == "__main__":
 
-    #BASE_DIR = '/nfs/home/omutlu'
-    BASE_DIR = '/home/oguz/Desktop/hiwi_code'
+    BASE_DIR = '/nfs/home/omutlu'
+    #BASE_DIR = '/home/oguz/Desktop/hiwi_code'
     BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
     CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
     #CBMC_570_WRAPPER = BASE_DIR + '/cbmc_570/cbmc/cbmc-wrapper'
@@ -475,13 +500,18 @@ if __name__ == "__main__":
 
     TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
 
-    to_test = ['c/floats-cdfpl/square_6.yml', 'c/hardware-verification-bv/btor2c-lazyMod.brp2.4.prop1-back-serstep.yml',
-                'c/eca-rers2012/Problem14_label39.yml', 'c/hardware-verification-bv/btor2c-lazyMod.peg_solitaire.6.prop1-func-interl.yml']
+    to_test = [
+               #'c/floats-cdfpl/square_6.yml',
+               #'c/hardware-verification-bv/btor2c-lazyMod.brp2.4.prop1-back-serstep.yml',
+               #'c/eca-rers2012/Problem14_label39.yml',
+               #'c/hardware-verification-bv/btor2c-lazyMod.peg_solitaire.6.prop1-func-interl.yml'
+               'c/uthash-2.0.2/uthash_FNV_test1-2.yml',
+               ]
 
-    yml_files = [os.path.join(BENCHMARK_DIR, file) for file in to_test[1:]]
+    yml_files = [os.path.join(BENCHMARK_DIR, file) for file in to_test]
 
     for yml_file in yml_files:
-        for tool in ['CBMC', 'MALLOB', 'MALLOB-FILESYSTEM']:    
+        for tool in ['MALLOB-FILESYSTEM']:
             result_csv_file = RESULTS_DIR + tool + '_' + 'handpicked_results.csv'
             filesystem = True if tool == 'MALLOB-FILESYSTEM' else False
             main_yml(TOOLS[tool], yml_file, result_csv_file, filesystem, MALLOB_DIR)
