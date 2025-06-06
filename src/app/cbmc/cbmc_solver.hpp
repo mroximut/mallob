@@ -142,29 +142,22 @@ public:
 
     std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions)
     {
-
         int size_options = cbmcOptions.size();
         int argc = 2 + size_options;
 
         std::vector<const char *> argv;
         argv.reserve(argc + 1); // +1 for null terminator
 
-        // Add cbmc command
         argv.push_back(strdup("cbmc"));
-
-        // Add filename
         argv.push_back(_filename.c_str());
 
-        // Add options
         for (const auto &opt : cbmcOptions)
         {
             argv.push_back(opt.c_str());
         }
 
-        // Add null terminator
         argv.push_back(nullptr);
 
-        // Log all arguments
         for (int i = 0; i < argc; i++)
         {
             LOG(V2_INFO, "CBMC argv[%d]: %s\n", i, argv[i]);

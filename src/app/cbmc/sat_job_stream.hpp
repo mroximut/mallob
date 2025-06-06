@@ -53,6 +53,25 @@ public:
         assert(!_pending);
         assert(newLiterals.empty() || newLiterals.front() != 0);
         assert(newLiterals.empty() || newLiterals.back() == 0);
+        
+        // std::string cnfFilename = "/home/oguz/Desktop/ipasir/" + _base_job_name + std::to_string(_subjob_counter) + ".cnf";
+        // std::ofstream cnfFile(cnfFilename);
+        // for (size_t i = 0; i < newLiterals.size(); i++) {
+        //     if (newLiterals[i] == 0) {
+        //         cnfFile << "0\n";
+        //     } else {
+        //         cnfFile << newLiterals[i] << " ";
+        //     }
+        // }        
+        // if (!assumptions.empty()) {
+        //     cnfFile << "a ";
+        //     for (int assumption : assumptions) {
+        //         cnfFile << assumption << " ";
+        //     }
+        //     cnfFile << "0\n";
+        // }
+        
+        // cnfFile.close();
 
         //for (auto key : {"__NV", "__NC", "__NO"})
         //    _json_base["configuration"][key] = _desc.getAppConfiguration().map.at(key);
