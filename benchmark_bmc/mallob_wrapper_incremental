@@ -1,8 +1,8 @@
 #!/bin/bash
 # tool
 
-TOOL_BINARY=./src/cbmc/cbmc
-TOOL_NAME=CBMC
+TOOL_BINARY=./lib/cbmc/src/cbmc/cbmc
+TOOL_NAME=CBMC_MALLOB
 FIND_OPTIONS=""
 
 # function to run the tool
@@ -15,40 +15,32 @@ run()
 
   gmon_suffix=$GMON_OUT_PREFIX
   export GMON_OUT_PREFIX="goto-cc_$gmon_suffix"
-  ./src/goto-cc/goto-cc --verbosity 9 -m$BIT_WIDTH --function $ENTRY "${BM[@]}" -o $LOG.bin
+  ./lib/cbmc/src/goto-cc/goto-cc --verbosity 9 -m$BIT_WIDTH --function $ENTRY "${BM[@]}" -o $LOG.bin
   if [ -n "$FAIL_FUNCTION" ]; then
-    ./src/goto-instrument/goto-instrument $LOG.bin $LOG.bin --remove-function-body "$FAIL_FUNCTION" \
+    ./lib/cbmc/src/goto-instrument/goto-instrument $LOG.bin $LOG.bin --remove-function-body "$FAIL_FUNCTION" \
                                         --verbosity 9 --generate-function-body "$FAIL_FUNCTION" \
                                         --generate-function-body-options assert-false
   fi
 
   export GMON_OUT_PREFIX="cbmc_$gmon_suffix"
+  
+  # Replace spaces with commas in PROPERTY for mallob
+  echo "PROPERTY: $PROPERTY"
+  PROPERTY=$(echo "$PROPERTY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  PROPERTY=$(echo "$PROPERTY" | sed "s/ /,/g")
+  echo "PROPERTY: $PROPERTY"
+
 timeout 875 bash -c ' \
 \
 ulimit -v 64000000 ; \
 \
-EC=42 ; \
-for c in 2 6 12 17 21 40 200 400 1025 2049 268435456 ; do \
-echo "Unwind: $c" >> $LOG.latest ; \
-./src/cbmc/cbmc --no-standard-checks --verbosity 9 --slice-formula --unwind $c --stop-on-fail --object-bits $OBJ_BITS $PROPERTY $LOG.bin >> $LOG.latest 2>&1 ; \
-ec=$? ; \
-if [ $ec -eq 0 ] ; then \
-if ! tail -n 10 $LOG.latest | grep -q "^VERIFICATION SUCCESSFUL$" ; then ec=1 ; else \
-./src/cbmc/cbmc --no-standard-checks --verbosity 9 --slice-formula --unwinding-assertions --unwind $c --stop-on-fail --object-bits $OBJ_BITS $PROPERTY $LOG.bin >> $LOG.latest 2>&1 || ec=42 ; \
-fi ; \
-fi ; \
-if [ $ec -eq 10 ] ; then \
-if ! tail -n 10 $LOG.latest | grep -q "^VERIFICATION FAILED$" ; then ec=1 ; fi ; \
-fi ; \
-\
-case $ec in \
-0) EC=0 ; cat $LOG.latest >> $LOG.ok ; echo "EC=$EC" >> $LOG.ok ; break ;; \
-10) EC=10 ; cat $LOG.latest >> $LOG.ok ; echo "EC=$EC" >> $LOG.ok ; break ;; \
-42) EC=42 ; cat $LOG.latest >> $LOG.ok ; rm -f $LOG.latest ;; \
-*) if [ $EC -ne 0 ] ; then EC=$ec ; cat $LOG.latest >>$LOG.ok ; fi ; echo "EC=$EC" >> $LOG.ok ; break ;; \
-esac ; \
-\
-done \
+echo "Running mallob" >> $LOG.latest ; \
+ec=42 ; \
+./build/mallob -t=16 -mono-app=CBMC -mono=$LOG.bin -v=4 -compress-models -s2f=$LOG.latest -cbmc-opts=--incremental-loop,main.0,--unwind-max,100,--no-standard-checks,--verbosity,9,--slice-formula,--stop-on-fail,--object-bits,$OBJ_BITS,$PROPERTY ; \
+if grep -q "EC=" $LOG.latest; then ec=$(grep -o "EC=[0-9]*" $LOG.latest | tail -n1 | cut -d'=' -f2 | tr -d '[:space:]'); else ec=1; fi ; \
+#echo "Exit code: $ec" ; \
+mv $LOG.latest $LOG.ok ; \
+#echo "EC=$ec" >> $LOG.ok ; \
 '
   if [ ! -s $LOG.ok ] ; then
     mv $LOG.latest $LOG.ok ; echo "EC=42" >> $LOG.ok

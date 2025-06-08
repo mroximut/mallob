@@ -4,6 +4,8 @@
 TOOL_BINARY=./lib/cbmc/src/cbmc/cbmc
 TOOL_NAME=CBMC_MALLOB
 FIND_OPTIONS=""
+SAVE_LOGFILE=false
+SAVE_DIRECTORY=./logs
 
 # function to run the tool
 
@@ -212,8 +214,15 @@ export GMON_OUT_PREFIX=`basename ${BM[0]}`.gmon.out
 
 export BM_DIR=`mktemp -d -t ${TOOL_NAME}-benchmark.XXXXXX`
 
-export LOG=`mktemp -t ${TOOL_NAME}-log.XXXXXX`
+
+if $SAVE_LOGFILE; then
+  mkdir -p $SAVE_DIRECTORY
+  export LOG=$SAVE_DIRECTORY/$(date +%Y%m%d_%H%M%S)_$(basename ${BM[0]}).log
+else
+  export LOG=$(mktemp -t ${TOOL_NAME}-log.XXXXXX)
+fi
 trap "rm -rf $LOG $LOG.latest $LOG.ok $LOG.witness $LOG.bin $BM_DIR" EXIT
+
 
 run
 

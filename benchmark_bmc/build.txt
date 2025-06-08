@@ -1,0 +1,28 @@
+ 
+- lib/cbmc
+rm ./src/solvers/solvers.a ./src/cbmc/libcbmc.a
+MALLOB=/nfs/home/omutlu/cbmc_mallob_monolithic/mallob make -C src "CXXFLAGS+=-Wno-error" -j32
+
+- monolithic
+rm build/*mallob*
+cd build ; make -j32 ; cd ..
+
+- cbmc_cadical
+rm ./src/solvers/solvers.a
+make -C src LIBS="/nfs/home/omutlu/cbmc/cadical/build/libcadical.a" IPASIR="/nfs/home/omutlu/cbmc/cadical/src" -j32
+
+- mallob_vanilla (_NC assert comment out)
+rm build/*mallob*
+cd build ; make -j32 ; cd ..
+
+- mallo-ipasir-bridge
+make 
+
+- filesystem
+rm ./src/solvers/solvers.a
+make -C src LIBS="/nfs/home/omutlu/mallob-ipasir-bridge/libipasirmallob.a" IPASIR="/nfs/home/omutlu/mallob-ipasir-bridge/src" -j32
+
+
+
+----MALLOB initial cmake
+

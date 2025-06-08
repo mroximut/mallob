@@ -61,7 +61,7 @@ public:
         if (!_params.unwindLoops().empty())
         {
             int EC = 42;
-
+            int ec = 42;
             std::vector<int> unwind_values = {2, 6, 12, 17, 21, 40, 200, 400, 1025, 2049, 268435456};
             cbmcOptions.push_back("--unwind");
 
@@ -69,13 +69,13 @@ public:
             {
                 cbmcOptions.push_back(std::to_string(unwind_value));
                 auto [res_unwind, contains_successful, contains_failed] = runCBMC(cbmcOptions);
-                EC = res_unwind;
+                ec = res_unwind;
 
-                if (EC == 0)
+                if (ec == 0)
                 {
                     if (!contains_successful)
                     {
-                        EC = 1;
+                        ec = 1;
                     }
                     else
                     {
@@ -84,25 +84,26 @@ public:
                         cbmcOptions.pop_back();
                         if (res_unwind2 != 0)
                         {
-                            EC = 42;
+                            ec = 42;
                         }
                     }
                 }
-                if (EC == 10)
+                if (ec == 10)
                 {
                     if (!contains_failed)
                     {
-                        EC = 1;
+                        ec = 1;
                     }
                 }
 
                 cbmcOptions.pop_back();
-                if (EC == 42)
+                if (ec == 42)
                 {
                     continue;
                 }
                 else
                 {
+                    EC = ec;
                     break;
                 }
             }
