@@ -13,6 +13,16 @@ from pathlib import Path
 # Constants
 TIMEOUT: int = 900
 
+BASE_DIR = '/nfs/home/omutlu'
+#BASE_DIR = '/home/oguz/Desktop/hiwi_code'
+BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
+CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
+MALLOB_WRAPPER = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mallob-wrapper'
+FILESYSTEM_WRAPPER = BASE_DIR + '/cbmc_mallob_filesystem/cbmc/cbmc-wrapper'
+RESULTS_DIR = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mem-overflow-between10-30-timeout=900/'
+MALLOB_DIR = BASE_DIR + '/mallob/'
+TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
+
 @dataclass
 class BenchmarkResult:
     """Data class to store benchmark results."""
@@ -191,6 +201,27 @@ def run_with_args(cmd_args: List[str], cwd: str) -> Dict[str, Any]:
     end_time = time.time()
     total_time = end_time - start_time
     #print(result)
+    # Write stdout to a log file
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Create a filename based on the command
+    # Get the tool name by doing a reverse lookup in the TOOLS dictionary
+    tool_name = next((name for name, path in TOOLS.items() if path == cmd_args[0]), "unknown")
+    cmd_name = tool_name + "_" + os.path.basename(cmd_args[2] if len(cmd_args) > 2 else "unknown")
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    log_file = log_dir / f"{cmd_name}_{timestamp}.log"
+    
+    # Write stdout and stderr to the log file
+    with open(log_file, "w") as f:
+        if result and result.stdout:
+            f.write("===== STDOUT =====\n")
+            f.write(result.stdout)
+        if result and result.stderr:
+            f.write("\n===== STDERR =====\n")
+            f.write(result.stderr)
+        f.write(f"\n===== EXIT CODE: {result.returncode if result else 'None'} =====\n")
+        f.write(f"===== TOTAL RUNTIME: {total_time:.2f}s =====\n")
 
     # Try to read stdout even if an exception occurred
     if result and result.stdout:
@@ -370,7 +401,7 @@ def cleanup():
     time.sleep(2)
 
 def start_mallob_filesystem(path):
-    mallob_cmd = "spack env activate myenv && ulimit -v 64000000 && build/mallob -t=32 -compress-models"
+    mallob_cmd = "spack env activate myenv && ulimit -v 96000000 && build/mallob -t=32 -compress-models"
     # mallob_process = subprocess.Popen(
     #     mallob_cmd,
     #     cwd=path,
@@ -426,8 +457,8 @@ def main_yml(wrapper_path, yml_file, result_csv_file, filesystem=False, MALLOB_D
     parsed_yml_data = parse_yml_file(yml_file)
 
     for property_file in list(parsed_yml_data.task_dict['property_files'].keys()):
-        if "no-overflow" not in property_file:
-            continue
+        # if "no-overflow" not in property_file:
+        #     continue
         if filesystem:
             cleanup()
             start_mallob_filesystem(MALLOB_DIR)
@@ -438,17 +469,7 @@ def main_yml(wrapper_path, yml_file, result_csv_file, filesystem=False, MALLOB_D
 
 def run_benchmark_defs():
 
-    BASE_DIR = '/nfs/home/omutlu'
-    #BASE_DIR = '/home/oguz/Desktop/hiwi_code'
-    BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
-    CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
-    #CBMC_570_WRAPPER = BASE_DIR + '/cbmc_570/cbmc/cbmc-wrapper'
-    MALLOB_WRAPPER = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mallob-wrapper'
-    FILESYSTEM_WRAPPER = BASE_DIR + '/cbmc_mallob_filesystem/cbmc/cbmc-wrapper'
-    RESULTS_DIR = BASE_DIR + '/results/'
-    MALLOB_DIR = BASE_DIR + '/mallob/'
-
-    TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
+    
 
     benchmark_sets = (extract_benchmark_set(BASE_DIR + '/benchmark/benchmark-defs/cbmc.xml'))
 
@@ -460,15 +481,16 @@ def run_benchmark_defs():
     #            ]
 
 
-    benchmark_sets = [benchmark_set for benchmark_set in benchmark_sets if "MemSafety" in benchmark_set.task_name or "NoOverflows" in benchmark_set.task_name] #in to_test]
+    benchmark_sets = [benchmark_set for benchmark_set in benchmark_sets if "MemSafety" not in benchmark_set.task_name and "NoOverflows" not in benchmark_set.task_name] #in to_test]
+    #benchmark_sets = [benchmark_set for benchmark_set in benchmark_sets if "uthash" in benchmark_set.task_name]
     print(benchmark_sets)
     benchmark_sets = benchmark_sets
 
     cleanup()
     print("Starting benchmark runs...")
     for benchmark_set in benchmark_sets:
-        #for tool in ['CBMC', 'MALLOB']: # 'MALLOB-FILESYSTEM']:
-        for tool in ['MALLOB-FILESYSTEM']:
+        for tool in [ 'MALLOB', 'CBMC', 'MALLOB-FILESYSTEM']:
+        #for tool in ['MALLOB-FILESYSTEM']:
             set_file = BENCHMARK_DIR + benchmark_set.set_file
             prop_file = BENCHMARK_DIR + benchmark_set.property_file
             result_csv_file = RESULTS_DIR + tool + '_' + benchmark_set.task_name + '.csv'
@@ -477,6 +499,13 @@ def run_benchmark_defs():
             print(f"Running {tool} on {benchmark_set.task_name} with set file {set_file} and property file {prop_file}")
 
             filesystem = True if tool == 'MALLOB-FILESYSTEM' else False
+
+            # Check if result CSV file already exists
+            if not os.path.exists(result_csv_file):
+                print(f"Result file {result_csv_file} does not exist. Running benchmark...")
+            else:
+                print(f"Result file {result_csv_file} already exists. Skipping benchmark.")
+                continue
 
             main(wrapper, set_file, prop_file, result_csv_file, filesystem, MALLOB_DIR)
 
@@ -488,32 +517,31 @@ def run_benchmark_defs():
 
 if __name__ == "__main__":
 
-    BASE_DIR = '/nfs/home/omutlu'
-    #BASE_DIR = '/home/oguz/Desktop/hiwi_code'
-    BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
-    CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
-    #CBMC_570_WRAPPER = BASE_DIR + '/cbmc_570/cbmc/cbmc-wrapper'
-    MALLOB_WRAPPER = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mallob-wrapper'
-    FILESYSTEM_WRAPPER = BASE_DIR + '/cbmc_mallob_filesystem/cbmc/cbmc-wrapper'
-    RESULTS_DIR = BASE_DIR + '/cbmc_mallob_monolithic/mallob/results/'
-    MALLOB_DIR = BASE_DIR + '/mallob/'
+    # BASE_DIR = '/nfs/home/omutlu'
+    # #BASE_DIR = '/home/oguz/Desktop/hiwi_code'
+    # BENCHMARK_DIR = BASE_DIR + '/benchmark/sv-benchmarks/'
+    # CBMC_WRAPPER = BASE_DIR + '/cbmc/cbmc-wrapper'
+    # MALLOB_WRAPPER = BASE_DIR + '/cbmc_mallob_monolithic/mallob/mallob-wrapper'
+    # FILESYSTEM_WRAPPER = BASE_DIR + '/cbmc_mallob_filesystem/cbmc/cbmc-wrapper'
+    # RESULTS_DIR = BASE_DIR + '/cbmc_mallob_monolithic/mallob/results/'
+    # MALLOB_DIR = BASE_DIR + '/mallob/'
 
-    TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
+    # TOOLS = {"CBMC": CBMC_WRAPPER, "MALLOB": MALLOB_WRAPPER, "MALLOB-FILESYSTEM": FILESYSTEM_WRAPPER}
 
-    to_test = [
-               #'c/floats-cdfpl/square_6.yml',
-               #'c/hardware-verification-bv/btor2c-lazyMod.brp2.4.prop1-back-serstep.yml',
-               #'c/eca-rers2012/Problem14_label39.yml',
-               #'c/hardware-verification-bv/btor2c-lazyMod.peg_solitaire.6.prop1-func-interl.yml'
-               'c/uthash-2.0.2/uthash_FNV_test1-2.yml',
-               ]
+    # to_test = [
+    #            #'c/floats-cdfpl/square_6.yml',
+    #            #'c/hardware-verification-bv/btor2c-lazyMod.brp2.4.prop1-back-serstep.yml',
+    #            #'c/eca-rers2012/Problem14_label39.yml',
+    #            #'c/hardware-verification-bv/btor2c-lazyMod.peg_solitaire.6.prop1-func-interl.yml'
+    #            'c/uthash-2.0.2/uthash_FNV_test1-2.yml',
+    #            ]
 
-    yml_files = [os.path.join(BENCHMARK_DIR, file) for file in to_test]
+    # yml_files = [os.path.join(BENCHMARK_DIR, file) for file in to_test]
 
-    for yml_file in yml_files:
-        for tool in ['MALLOB-FILESYSTEM']:
-            result_csv_file = RESULTS_DIR + tool + '_' + 'handpicked_results.csv'
-            filesystem = True if tool == 'MALLOB-FILESYSTEM' else False
-            main_yml(TOOLS[tool], yml_file, result_csv_file, filesystem, MALLOB_DIR)
+    # for yml_file in yml_files:
+    #     for tool in ['MALLOB-FILESYSTEM', 'CBMC', 'MALLOB']:
+    #         result_csv_file = RESULTS_DIR + tool + '_' + 'handpicked_results.csv'
+    #         filesystem = True if tool == 'MALLOB-FILESYSTEM' else False
+    #         main_yml(TOOLS[tool], yml_file, result_csv_file, filesystem, MALLOB_DIR)
 
-    #run_benchmark_defs()
+    run_benchmark_defs()
