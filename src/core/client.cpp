@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "client.hpp"
+#include "app/sat/data/model_string_compressor.hpp"
 #include "comm/msg_queue/message_handle.hpp"
 #include "comm/msgtags.h"
 #include "data/job_interrupt_reason.hpp"
@@ -660,7 +661,15 @@ void Client::handleSendJobResult(MessageHandle& handle) {
             auto jsonArr = json.get<std::vector<std::string>>();
             for (auto&& str : jsonArr) modelStrings.push_back(std::move(str));
         } else if (json.is_string()) {
-            modelStrings.push_back(json.get<std::string>());
+            if (resultCode == RESULT_SAT && _params.compressModels()) {
+                auto vec = ModelStringCompressor::decompress(json.get<std::string>());
+                std::string modelStr = "v ";
+                for (int l : vec) if (l!=0) modelStr += std::to_string(l) + " ";
+                modelStr += "0\n";
+                modelStrings.push_back(std::move(modelStr));
+            } else {
+                modelStrings.push_back(json.get<std::string>());
+            }
         } else {
             modelStrings.push_back(json.dump()+"\n");
         }
@@ -691,7 +700,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
         }
     }
 
-    int id = jobId;
+    int permanentId = jobId; // need to copy since jobId can get invalidated below
     if (_json_interface) {
         JobResult* resultPtr = new JobResult(std::move(jobResult));
         _pending_subtasks.emplace_back();
@@ -710,7 +719,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     }
 
     Logger::getMainInstance().flush();
-    finishJob(id, /*hasIncrementalSuccessors=*/desc.isIncremental());
+    finishJob(permanentId, /*hasIncrementalSuccessors=*/desc.isIncremental());
 }
 
 void Client::handleAbort(MessageHandle& handle) {
