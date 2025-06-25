@@ -115,9 +115,9 @@ public:
             res = res_unwind;
         }
 
-        if (!_params.s2f().empty())
+        if (!_params.s2fcbmc().empty())
         {
-            std::ofstream outputFile(_params.s2f(), std::ios::app);
+            std::ofstream outputFile(_params.s2fcbmc(), std::ios::app);
             outputFile << "\nEC=" + std::to_string(res) + "\n";
             outputFile.close();
         }
@@ -193,9 +193,9 @@ public:
             contains_failed = true;
         }
 
-        if (!_params.s2f().empty())
+        if (!_params.s2fcbmc().empty())
         {
-            std::ofstream outputFile(_params.s2f(), std::ios::app);
+            std::ofstream outputFile(_params.s2fcbmc(), std::ios::app);
             outputFile << cbmc_output;
             //outputFile << "\nEC=" + std::to_string(res) + "\n";
             outputFile.close();
