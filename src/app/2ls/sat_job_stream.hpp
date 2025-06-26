@@ -31,7 +31,7 @@ private:
 public:
     SatJobStream(APIConnector& api, int streamId, bool incremental) :
         _api(api),_incremental(incremental), 
-        _username("cbmc#") {
+        _username("cbmc#" + std::to_string(streamId)) {
 
         _base_job_name = "satjob-" + std::to_string(streamId) + "-rev-";
         _json_base = nlohmann::json {

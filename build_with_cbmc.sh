@@ -1,5 +1,5 @@
 cd lib/cbmc
-./build_with_mallob.sh
+bash ./build_with_mallob.sh
 cd ../..
 rm ./build_cbmc/*mallob*
 cd build_cbmc
