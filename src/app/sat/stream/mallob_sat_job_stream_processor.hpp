@@ -101,7 +101,7 @@ public:
         const auto& descriptionLabel = task.descLabel;
         float priority = task.priority;
 
-        if (_params.useChecksums()) _json_base["checksum"] = {chksum.count(), chksum.get()};
+        //if (_params.useChecksums()) _json_base["checksum"] = {chksum.count(), chksum.get()};
 
         if (_incremental && _json_base.contains("name")) {
             _json_base["precursor"] = _username + std::string(".") + _json_base["name"].get<std::string>();
@@ -143,7 +143,7 @@ public:
 
                 int resultCode = result["result"]["resultcode"];
                 std::vector<int> solution;
-                if (resultCode == 10 && _params.compressModels()) {
+                if (resultCode == 10) { //_params.compressModels()) {
                     solution = ModelStringCompressor::decompress(result["result"]["solution"].get<std::string>());
                 } else {
                     solution = result["result"]["solution"].get<std::vector<int>>();

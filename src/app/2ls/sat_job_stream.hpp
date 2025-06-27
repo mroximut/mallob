@@ -43,6 +43,11 @@ public:
         _json_base["files"] = std::vector<std::string>();
     }
 
+    ~SatJobStream() {
+        interrupt();
+        finalize();
+    }
+
     void setGroupId(const std::string& groupId) {
         LOG(V2_INFO, "CBMC %s group ID %s V=[%i,%i]\n", _base_job_name.c_str(), groupId.c_str());
         _json_base["group-id"] = groupId;

@@ -10,6 +10,8 @@
 #include <iostream>
 #include <vector>
 
+#include "cbmc_sat_connector.hpp"
+
 class TwoLSSolver
 {
 
