@@ -10,5 +10,4 @@
 OPTION_GROUP(grpApp2ls, "app/2ls", "2LS options")
 
 OPT_STRING(twolsOptions, "2ls-opts", "", "", "2LS options to be passed to the solver")
-OPT_STRING(s2f2ls, "s2f", "", "", "file, where the 2LS output will be stored")
 OPT_STRING(terminationAnalysis, "termination-analysis", "", "", "start two jobs a la sv-comp")

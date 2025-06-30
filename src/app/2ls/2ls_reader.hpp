@@ -20,6 +20,13 @@ public:
         //auto& config = desc.getAppConfiguration();
         //desc.beginInitialization(desc.getRevision());
         //desc.endInitialization();
+        const std::string NC_DEFAULT_VAL = "BMMMKKK111";
+        desc.setAppConfigurationEntry("__NV", NC_DEFAULT_VAL);
+        desc.setAppConfigurationEntry("__NC", NC_DEFAULT_VAL);
+        desc.beginInitialization(0);
+        StaticStore<std::string>::insert("2ls-jobdesc-#" + std::to_string(desc.getId()), filename);
+        desc.endInitialization();
+            
         return true;
     }
 };

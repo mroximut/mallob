@@ -42,7 +42,7 @@ void register_mallob_app_cbmc() {
             json.push_back({
                 {"EXITCODE", result.result == 20 ? 0 : result.result},         
                 {"result", result.result == 10 ? "VERIFICATION FAILED" : 
-                    (result.result == 20 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
+                    (result.result == 20 ? "VERIFICATION SUCCESSFUL": "UNKNOWN")},
                 {"application", "CBMC"},
                 {"stats", {
                     {"timeOfSubmission", stat.timeOfSubmission},

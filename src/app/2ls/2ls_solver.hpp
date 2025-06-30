@@ -22,12 +22,15 @@ private:
     JobDescription &_desc;
 
 public:
-    TwoLSSolver(const Parameters &params, APIConnector &api, JobDescription &desc) : _params(params), _api(api), _desc(desc)
+    TwoLSSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
+    _params(params), _api(api), _desc(desc), _filename(programFile)
     {
-        //_filename = desc.getAppConfiguration().map.at("file");
-        _filename = params.monoFilename();
+        //_filename = params.monoFilename();
+        LOG(V2_INFO, "2LS Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
     }
-    ~TwoLSSolver() = default;
+    ~TwoLSSolver() {
+        LOG(V2_INFO, "2LS Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());
+    }
 
     JobResult solve()
     {
@@ -58,15 +61,61 @@ public:
             cbmcOptions.push_back(cbmcOptionsStr.substr(start));
         }
 
-        int res = 42;
+        int res = 5;
+        // if (!_params.terminationAnalysis().empty()) {
+        //     std::vector<std::string> cbmcOptionsTermination = cbmcOptions;
+        //     cbmcOptionsTermination.push_back("--termination");
+        //     std::vector<std::string> cbmcOptionsNontermination = cbmcOptions;
+        //     cbmcOptionsNontermination.push_back("--nontermination");
 
+        //     std::promise<std::tuple<int, bool, bool>> promise;
+        //     std::shared_future<std::tuple<int, bool, bool>> result_future(promise.get_future());
+        //     std::atomic<bool> result_set{false};
+
+        //     // Termination task
+        //     ProcessWideThreadPool::get().addTask([&, cbmcOptionsTermination]() mutable {
+        //         auto result = runCBMC(cbmcOptionsTermination);
+        //         int res_term = std::get<0>(result);
+        //         if (!result_set.exchange(true) && res_term != 5) {
+        //             promise.set_value(result);
+        //         } else if (res_term == 5) {
+        //             // Wait for the other, but if both are 5, set anyway
+        //             if (result_set.exchange(true)) {
+        //                 promise.set_value(result);
+        //             }
+        //         }
+        //     });
+
+        //     // Nontermination task
+        //     ProcessWideThreadPool::get().addTask([&, cbmcOptionsNontermination]() mutable {
+        //         auto result = runCBMC(cbmcOptionsNontermination);
+        //         int res_nonterm = std::get<0>(result);
+        //         if (!result_set.exchange(true) && res_nonterm != 5) {
+        //             promise.set_value(result);
+        //         } else if (res_nonterm == 5) {
+        //             // Wait for the other, but if both are 5, set anyway
+        //             if (result_set.exchange(true)) {
+        //                 promise.set_value(result);
+        //             }
+        //         }
+        //     });
+
+        //     // Wait for the first result to be set
+        //     auto [res_any, contains_successful, contains_failed] = result_future.get();
+        //     res = res_any;
+
+    
         auto [res_unwind, contains_successful, contains_failed] = runCBMC(cbmcOptions);
         res = res_unwind;
+        
+        std::cout << "s EC=" << res << std::endl;
+        std::cout << "t SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
 
-        if (!_params.s2f2ls().empty())
+        if (!_params.solutionToFile().empty())
         {
-            std::ofstream outputFile(_params.s2f2ls(), std::ios::app);
-            outputFile << "\nEC=" + std::to_string(res) + "\n";
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << "s EC=" + std::to_string(res) + "\n";
+            outputFile << "t SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
             outputFile.close();
         }
 
@@ -113,26 +162,88 @@ public:
             LOG(V2_INFO, "2LS argv[%d]: %s\n", i, argv[i]);
         }
 
+        // std::string args;
+        // args += _filename;
+        // for (const auto& opt : cbmcOptions) {
+        //     if (!args.empty()) args += " ";
+        //     args += opt;
+        // }
+        // Subprocess proc(_params, "/home/oguz/Desktop/hiwi_code/cbmc_mallob_monolithic/mallob/lib/2ls/src/2ls/2ls", args); 
+        // int pid = proc.start();
+
+        // int status = 0;
+        // if (pid > 0) {
+        //     if (waitpid(pid, &status, 0) == -1) {
+        //         LOG(V0_CRIT, "waitpid failed for 2LS subprocess\n");
+        //         status = -1;
+        //     }
+        // }
+
+        // // To get the exit code:
+        // int exit_code = -1;
+        // if (WIFEXITED(status)) {
+        //     exit_code = WEXITSTATUS(status);
+        // }
+        // int res = exit_code;
+
         twols_parse_optionst parse_options(argc, argv.data());
 
         // Run CBMC
-        // std::stringstream buffer;
-        // std::stringstream buffer_err;
-        // std::streambuf *old = std::cout.rdbuf(buffer.rdbuf());
-        // std::streambuf *old_err = std::cerr.rdbuf(buffer_err.rdbuf());
+        std::stringstream buffer;
+        std::stringstream buffer_err;
+        std::streambuf *old;
+        std::streambuf *old_err;
 
-        int res = parse_options.main();
+        if (!_params.solutionToFile().empty())
+        {
+            old = std::cout.rdbuf(buffer.rdbuf());
+            old_err = std::cerr.rdbuf(buffer_err.rdbuf());
+        }
+
+        int res = 5;
+
+        // std::promise<int> promise;
+        // std::future<int> future_res = promise.get_future();
+
+        // ProcessWideThreadPool::get().addTask([&]() {
+        //     try {
+        //         res = parse_options.main();
+        //         promise.set_value(res);
+        //     } catch (const std::exception &e) {
+        //         LOG(V0_CRIT, "Error in 2LS %s: exiting with 5\n", e.what());
+        //     } catch (...) {
+        //         LOG(V0_CRIT, "Unknown error in 2LS: exiting with 5\n");
+        //     }
+        // });
+
+        // while (future_res.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
+        //     if (Terminator::isTerminating()) {
+        //         LOG(V0_CRIT, "2LS was terminated by the main thread\n");
+        //         return std::make_tuple(5, false, false);
+        //     }
+        // }
+        
+
+        try {
+            res = parse_options.main();           
+        } catch (const std::exception &e) {
+            LOG(V0_CRIT, "Error in 2LS %s: exiting with 5\n", e.what());         
+        } catch (...) {
+            LOG(V0_CRIT, "Unknown error in 2LS: exiting with 5\n");
+        }
+        
         bool contains_successful = false;
         bool contains_failed = false;
 
-        // std::cout.rdbuf(old);
-        // std::cerr.rdbuf(old_err);
-
-        // // Write output immediately after run
-        // std::string cbmc_output = buffer.str() + buffer_err.str() + "\n" + "CBMCexitcode" 
-        //                                        + "(" + argv[argc - 2] + " " + argv[argc - 1] 
-        //                                        +  "): " + std::to_string(res) + "\n";
-
+        if (!_params.solutionToFile().empty())
+        {
+            std::cout.rdbuf(old);
+            std::cerr.rdbuf(old_err);
+            std::string cbmc_output = buffer.str() + buffer_err.str() + "\n";
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << cbmc_output;
+            outputFile.close();
+        }
         // // if (cbmc_output.find("VERIFICATION SUCCESSFUL") != std::string::npos)
         // // {
         // //     contains_successful = true;

@@ -32,6 +32,8 @@ private:
         return _stream_id++;
     }
 
+    inline static float global_sat_time {0.0f};
+
     int _stream_id;
     std::string _name;
 
@@ -47,6 +49,8 @@ private:
     std::vector<int> _solution;
     tsl::robin_set<int> _failed_lits;
     bool _terminate {false};
+
+    float _sat_time {0.0f};
 
 public:
 
@@ -89,7 +93,7 @@ public:
     }
 
     int solve() {
-        _job_stream.setTerminator([&]() {return _terminate;});
+        _job_stream.setTerminator([&]() {return isTerminating();});
 
         _revision++;
         if (_revision == 0 && _mallob_processor) {
@@ -106,6 +110,8 @@ public:
         time = Timer::elapsedSeconds() - time;
         LOG(V2_INFO, "%s rev. %i done - time=%.3fs res=%i\n", _name.c_str(), _revision, time, resultCode);
         result = resultCode;
+        _sat_time += time;
+        global_sat_time += time;
 
         if (result == 10) {
             _solution = std::move(solution);
@@ -151,6 +157,7 @@ public:
     ~CBMCSatConnector()
     {
         LOG(V2_INFO, "Done: %s\n", _name.c_str());
+        std::cout << "t SAT_TIME: " << global_sat_time << std::endl;
         _job_stream.interrupt();
         _job_stream.finalize();
     }
@@ -158,6 +165,16 @@ public:
     void setTerminate() {
         _terminate = true;
         LOG(V2_INFO, "%s set terminate\n", _name.c_str());
+    }
+
+    bool isTerminating() {
+        if (Terminator::isTerminating())
+            return true;
+        return _terminate;
+    }
+
+    static float getGlobalSatTime() {
+        return global_sat_time;
     }
 
 };

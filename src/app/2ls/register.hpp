@@ -11,8 +11,8 @@
 
 struct ClientSide2lsProgram : public app_registry::ClientSideProgram {
     std::unique_ptr<TwoLSSolver> solver;
-    ClientSide2lsProgram(const Parameters& params, APIConnector& api, JobDescription& desc) :
-        app_registry::ClientSideProgram(), solver(new TwoLSSolver(params, api, desc)) {
+    ClientSide2lsProgram(const Parameters& params, APIConnector& api, JobDescription& desc, const std::string& programFile) :
+        app_registry::ClientSideProgram(), solver(new TwoLSSolver(params, api, desc, programFile)) {
         function = [&]() {return solver->solve();};
     }
     virtual ~ClientSide2lsProgram() {}
@@ -26,23 +26,26 @@ void register_mallob_app_2ls() {
         },
         // Client-side program
         [](const Parameters& params, APIConnector& api, JobDescription& desc) {
-            return new ClientSide2lsProgram(params, api, desc);
+            std::string programFile = StaticStore<std::string>::extract("2ls-jobdesc-#" + std::to_string(desc.getId()));
+            return new ClientSide2lsProgram(params, api, desc, programFile);
         },
         // Job solution formatter
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
 
-            // if (!params.s2f().empty())
-            // {
-            //     std::ofstream outputFile(params.s2f(), std::ios::app);
-            //     outputFile << "\nEC=" + std::to_string(result.result == 20 ? 0 : result.result) + "\n";
-            //     outputFile.close();
-            // }
+            std::cout << "t PROCESSING_TIME: " << stat.processingTime << std::endl;
+
+            if (!params.solutionToFile().empty())
+            {
+                std::ofstream outputFile(params.solutionToFile(), std::ios::app);
+                outputFile << "t PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
+                outputFile.close();
+            }
             
             json.push_back({
                 {"EXITCODE", result.result == 20 ? 0 : result.result},         
                 {"result", result.result == 10 ? "VERIFICATION FAILED" : 
-                    (result.result == 20 ? "VERIFICATION SUCCESSFULL": "UNKNOWN")},
+                    (result.result == 20 ? "VERIFICATION SUCCESSFUL": "UNKNOWN")},
                 {"application", "2ls"},
                 {"stats", {
                     {"timeOfSubmission", stat.timeOfSubmission},
@@ -56,7 +59,7 @@ void register_mallob_app_2ls() {
                     {"latencyOf1stVolumeUpdate", stat.latencyOf1stVolumeUpdate}
                 }},
             });
-            LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
+            //LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
             return json;
         }
     );
