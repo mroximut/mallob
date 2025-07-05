@@ -16,127 +16,10 @@ class TwoLSSolver
 {
 
 private:
-    std::string _filename;
     Parameters _params;
     APIConnector &_api;
     JobDescription &_desc;
-
-public:
-    TwoLSSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
-    _params(params), _api(api), _desc(desc), _filename(programFile)
-    {
-        //_filename = params.monoFilename();
-        LOG(V2_INFO, "2LS Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
-    }
-    ~TwoLSSolver() {
-        LOG(V2_INFO, "2LS Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());
-    }
-
-    JobResult solve()
-    {
-
-        std::string cbmcOptionsStr = "";
-        std::vector<std::string> cbmcOptions;
-        cbmcOptions.reserve(20);
-
-        if (_params.twolsOptions().empty())
-        {
-            LOG(V0_CRIT, "No additional 2LS options provided!\n");
-        }
-        else
-        {
-            cbmcOptionsStr = _params.twolsOptions();
-
-            size_t start = 0, end = 0;
-
-            if (cbmcOptionsStr.back() == ',')
-            {
-                cbmcOptionsStr.pop_back();
-            }
-            while ((end = cbmcOptionsStr.find(',', start)) != std::string::npos)
-            {
-                cbmcOptions.push_back(cbmcOptionsStr.substr(start, end - start));
-                start = end + 1;
-            }
-            cbmcOptions.push_back(cbmcOptionsStr.substr(start));
-        }
-
-        int res = 5;
-        // if (!_params.terminationAnalysis().empty()) {
-        //     std::vector<std::string> cbmcOptionsTermination = cbmcOptions;
-        //     cbmcOptionsTermination.push_back("--termination");
-        //     std::vector<std::string> cbmcOptionsNontermination = cbmcOptions;
-        //     cbmcOptionsNontermination.push_back("--nontermination");
-
-        //     std::promise<std::tuple<int, bool, bool>> promise;
-        //     std::shared_future<std::tuple<int, bool, bool>> result_future(promise.get_future());
-        //     std::atomic<bool> result_set{false};
-
-        //     // Termination task
-        //     ProcessWideThreadPool::get().addTask([&, cbmcOptionsTermination]() mutable {
-        //         auto result = runCBMC(cbmcOptionsTermination);
-        //         int res_term = std::get<0>(result);
-        //         if (!result_set.exchange(true) && res_term != 5) {
-        //             promise.set_value(result);
-        //         } else if (res_term == 5) {
-        //             // Wait for the other, but if both are 5, set anyway
-        //             if (result_set.exchange(true)) {
-        //                 promise.set_value(result);
-        //             }
-        //         }
-        //     });
-
-        //     // Nontermination task
-        //     ProcessWideThreadPool::get().addTask([&, cbmcOptionsNontermination]() mutable {
-        //         auto result = runCBMC(cbmcOptionsNontermination);
-        //         int res_nonterm = std::get<0>(result);
-        //         if (!result_set.exchange(true) && res_nonterm != 5) {
-        //             promise.set_value(result);
-        //         } else if (res_nonterm == 5) {
-        //             // Wait for the other, but if both are 5, set anyway
-        //             if (result_set.exchange(true)) {
-        //                 promise.set_value(result);
-        //             }
-        //         }
-        //     });
-
-        //     // Wait for the first result to be set
-        //     auto [res_any, contains_successful, contains_failed] = result_future.get();
-        //     res = res_any;
-
-    
-        auto [res_unwind, contains_successful, contains_failed] = runCBMC(cbmcOptions);
-        res = res_unwind;
-        
-        std::cout << "s EC=" << res << std::endl;
-        std::cout << "t SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
-
-        if (!_params.solutionToFile().empty())
-        {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
-            outputFile << "s EC=" + std::to_string(res) + "\n";
-            outputFile << "t SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
-            outputFile.close();
-        }
-
-        JobResult r;
-        r.id = _desc.getId();
-        r.revision = 0;
-        if (res == 0)
-        {
-            r.result = 20;
-        }
-        else if (res == 10)
-        {
-            r.result = 10;
-        }
-        else
-        {
-            r.result = res;
-        }
-
-        return r;
-    }
+    std::string _filename;
 
     std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions)
     {
@@ -161,30 +44,6 @@ public:
         {
             LOG(V2_INFO, "2LS argv[%d]: %s\n", i, argv[i]);
         }
-
-        // std::string args;
-        // args += _filename;
-        // for (const auto& opt : cbmcOptions) {
-        //     if (!args.empty()) args += " ";
-        //     args += opt;
-        // }
-        // Subprocess proc(_params, "/home/oguz/Desktop/hiwi_code/cbmc_mallob_monolithic/mallob/lib/2ls/src/2ls/2ls", args); 
-        // int pid = proc.start();
-
-        // int status = 0;
-        // if (pid > 0) {
-        //     if (waitpid(pid, &status, 0) == -1) {
-        //         LOG(V0_CRIT, "waitpid failed for 2LS subprocess\n");
-        //         status = -1;
-        //     }
-        // }
-
-        // // To get the exit code:
-        // int exit_code = -1;
-        // if (WIFEXITED(status)) {
-        //     exit_code = WEXITSTATUS(status);
-        // }
-        // int res = exit_code;
 
         twols_parse_optionst parse_options(argc, argv.data());
 
@@ -225,8 +84,8 @@ public:
         
 
         try {
-            res = parse_options.main();           
-        } catch (const std::exception &e) {
+            res = parse_options.main();    // isTerminating is already catched in 2LS and 6 is returned       
+        } catch (const std::runtime_error &e) {
             LOG(V0_CRIT, "Error in 2LS %s: exiting with 5\n", e.what());         
         } catch (...) {
             LOG(V0_CRIT, "Unknown error in 2LS: exiting with 5\n");
@@ -240,33 +99,203 @@ public:
             std::cout.rdbuf(old);
             std::cerr.rdbuf(old_err);
             std::string cbmc_output = buffer.str() + buffer_err.str() + "\n";
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
-            outputFile << cbmc_output;
-            outputFile.close();
-        }
-        // // if (cbmc_output.find("VERIFICATION SUCCESSFUL") != std::string::npos)
-        // // {
-        // //     contains_successful = true;
-        // // }
-        // // if (cbmc_output.find("VERIFICATION FAILED") != std::string::npos)
-        // // {
-        // //     contains_failed = true;
-        // // }
 
-        // if (!_params.s2f2ls().empty())
-        // {
-        //     std::ofstream outputFile(_params.s2f2ls(), std::ios::app);
-        //     outputFile << cbmc_output;
-        //     //outputFile << "\nEC=" + std::to_string(res) + "\n";
-        //     outputFile.close();
-        // }
-        // else
-        // {
-        //     LOG(V2_INFO, "CBMC output----------------------------------\n%s\n", cbmc_output.c_str());
-        //     LOG(V2_INFO, "End of CBMC output----------------------------------\n");
-        // }
+            if (!lastLinesContains(10, _params.solutionToFile(), "termination") &&
+            !lastLinesContains(10, _params.solutionToFile(), "nontermination"))
+            {   
+                std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+                outputFile << cbmc_output;
+                outputFile.close();
+            }
+        }
 
         return std::make_tuple(res, contains_successful, contains_failed);
     }
+
+    JobResult postprocess(int res) {
+        std::string jobType = _desc.getAppConfiguration().map["__TA"];
+        if (jobType == "false" || jobType == "parent") {
+            jobType = "FINAL";
+        }
+
+        std::cout << "s " << jobType << " EC=" << res << std::endl;
+        std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
+        std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
+
+        if (!_params.solutionToFile().empty())
+        {
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
+            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
+            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
+            outputFile.close();
+        }
+
+        JobResult r;
+        r.id = _desc.getId();
+        r.revision = 0;
+        if (res == 0)
+        {
+            r.result = 20;
+        }
+        else if (res == 10)
+        {
+            r.result = 10;
+        }
+        else
+        {
+            r.result = res;
+        }
+
+        return r;
+    }
+
+    JobResult solveTerminationAnalysis() {
+
+        std::promise<int> promise;
+        std::shared_future<int> result_future(promise.get_future());
+        std::atomic<bool> first_finished{false};
+
+        nlohmann::json base_json = {
+            {"user", "admin"},
+            {"name", "mono-job"},
+            {"files", {_filename}},
+            {"priority", 1.000},
+            {"application", "2LS"},
+            {"configuration", {
+                {"__TA", ""}
+            }}
+        };
+
+        nlohmann::json json1 = base_json;
+        json1["name"] = "mono-job-termination";
+        json1["configuration"]["__TA"] = "termination";
+        
+        nlohmann::json json2 = base_json;
+        json2["name"] = "mono-job-nontermination";
+        json2["configuration"]["__TA"] = "nontermination";
+
+        // send 1st sub-job to rank 0
+        APIRegistry::sendJobSubmissionToRank(0, json1, [&](JsonInterface::Result res, nlohmann::json& response) mutable {
+            assert(res == JsonInterface::Result::ACCEPT);
+            LOG(V2_INFO, "Received response for job 1: %s\n", response.dump().c_str());
+            int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            if (!first_finished.exchange(true)) // I am the first to finish 
+            {
+                if (result != 5) {
+                    promise.set_value(result);
+                } else {
+                    // other one's result will be used
+                }
+            } 
+            else // apparently, other one finished first with result 5 if we are here
+            {  
+                promise.set_value(result);
+            }
+        });
+        
+        // send 2nd sub-job to rank 1
+        APIRegistry::sendJobSubmissionToRank(1, json2, [&](JsonInterface::Result res, nlohmann::json& response) {
+            assert(res == JsonInterface::Result::ACCEPT);
+            LOG(V2_INFO, "Received response for job 2: %s\n", response.dump().c_str());
+            int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            if (!first_finished.exchange(true)) // I am the first to finish 
+            {
+                if (result != 5) {
+                    promise.set_value(result);
+                } else {
+                    // other one's result will be used
+                }
+            } 
+            else // apparently, other one finished first with result 5 if we are here
+            {  
+                promise.set_value(result);
+            }
+        });
+
+        int res = result_future.get();
+        
+        return postprocess(res);
+    }
+
+    bool lastLinesContains(int x, const std::string& filename, const std::string& search) {
+        std::ifstream infile(filename);
+        std::deque<std::string> last;
+        std::string line;
+        while (std::getline(infile, line)) {
+            last.push_back(line);
+            if (last.size() > x)
+                last.pop_front();
+        }
+        for (const auto& l : last) {
+            if (l.find(search) != std::string::npos)
+                return true;
+        }
+        return false;
+    }
+
+public:
+    TwoLSSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
+    _params(params), _api(api), _desc(desc), _filename(programFile)
+    {
+        //_filename = params.monoFilename();
+        LOG(V2_INFO, "2LS Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
+    }
+    ~TwoLSSolver() {
+        LOG(V2_INFO, "2LS Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());
+    }
+
+    JobResult solve()
+    {
+        LOG(V2_INFO, "Submitting 2LS job with TA: %s\n", _desc.getAppConfiguration().map["__TA"].c_str());
+
+        if (_desc.getAppConfiguration().map["__TA"] == "parent") {
+            return solveTerminationAnalysis();
+        }
+
+        std::string cbmcOptionsStr = "";
+        std::vector<std::string> cbmcOptions;
+        cbmcOptions.reserve(20);
+
+        if (_params.twolsOptions().empty())
+        {
+            LOG(V0_CRIT, "No additional 2LS options provided!\n");
+        }
+        else
+        {
+            cbmcOptionsStr = _params.twolsOptions();
+
+            size_t start = 0, end = 0;
+
+            if (cbmcOptionsStr.back() == ',')
+            {
+                cbmcOptionsStr.pop_back();
+            }
+            while ((end = cbmcOptionsStr.find(',', start)) != std::string::npos)
+            {
+                cbmcOptions.push_back(cbmcOptionsStr.substr(start, end - start));
+                start = end + 1;
+            }
+            cbmcOptions.push_back(cbmcOptionsStr.substr(start));
+        }
+
+        int res = 5;
+
+        if (_desc.getAppConfiguration().map["__TA"] == "termination") {
+            cbmcOptions.push_back("--termination");
+        } else if (_desc.getAppConfiguration().map["__TA"] == "nontermination") {
+            cbmcOptions.push_back("--nontermination");
+        } else {
+            assert(_desc.getAppConfiguration().map["__TA"] == "false"); 
+        }  
+
+    
+        auto [res_unwind, contains_successful, contains_failed] = runCBMC(cbmcOptions);
+        res = res_unwind;
+
+        return postprocess(res);
+    }
+
+    
 };
 #endif

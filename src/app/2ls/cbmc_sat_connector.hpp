@@ -26,13 +26,9 @@ class CBMCSatConnector
 {
 
 private:
-    static int getNextStreamId()
-    {
-        static int _stream_id = 1;
-        return _stream_id++;
-    }
 
     inline static float global_sat_time {0.0f};
+    inline static int sat_calls {0};
 
     int _stream_id;
     std::string _name;
@@ -53,6 +49,12 @@ private:
     float _sat_time {0.0f};
 
 public:
+
+    static int getNextStreamId()
+    {
+        static int _stream_id = 1;
+        return _stream_id++;
+    }
 
     CBMCSatConnector(const std::string& name) :
         _stream_id(getNextStreamId()),
@@ -96,6 +98,7 @@ public:
         _job_stream.setTerminator([&]() {return isTerminating();});
 
         _revision++;
+        sat_calls++;
         if (_revision == 0 && _mallob_processor) {
             _mallob_processor->setInitialSize(_nb_vars, _nb_clauses);
         }
@@ -120,6 +123,7 @@ public:
             _failed_lits.clear();
             for (int lit : solution) _failed_lits.insert(lit);
         }
+        std::cout << "t " << _stream_id << " " << _revision << " " << result << " " << time << std::endl;
 
         return result;
     }
@@ -167,7 +171,7 @@ public:
         LOG(V2_INFO, "%s set terminate\n", _name.c_str());
     }
 
-    bool isTerminating() {
+    bool isTerminating() const {
         if (Terminator::isTerminating())
             return true;
         return _terminate;
@@ -175,6 +179,10 @@ public:
 
     static float getGlobalSatTime() {
         return global_sat_time;
+    }
+
+    static int getSatCalls() {
+        return sat_calls;
     }
 
 };
