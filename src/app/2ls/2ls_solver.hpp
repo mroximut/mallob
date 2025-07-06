@@ -152,9 +152,10 @@ private:
 
     JobResult solveTerminationAnalysis() {
 
-        std::promise<int> promise;
-        std::shared_future<int> result_future(promise.get_future());
-        std::atomic<bool> first_finished{false};
+        auto promise = std::make_shared<std::promise<int>>();
+        std::shared_future<int> result_future(promise->get_future());
+        auto first_finished = std::make_shared<std::atomic<bool>>(false);
+        auto set_done = std::make_shared<std::atomic<bool>>(false);
 
         nlohmann::json base_json = {
             {"user", "admin"},
@@ -176,40 +177,44 @@ private:
         json2["configuration"]["__TA"] = "nontermination";
 
         // send 1st sub-job to rank 0
-        APIRegistry::sendJobSubmissionToRank(0, json1, [&](JsonInterface::Result res, nlohmann::json& response) mutable {
+        APIRegistry::sendJobSubmissionToRank(0, json1, [promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
             assert(res == JsonInterface::Result::ACCEPT);
             LOG(V2_INFO, "Received response for job 1: %s\n", response.dump().c_str());
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
-            if (!first_finished.exchange(true)) // I am the first to finish 
+            if (!first_finished->exchange(true)) // I am the first to finish 
             {
                 if (result != 5) {
-                    promise.set_value(result);
+                    promise->set_value(result);
+                    assert(!set_done->exchange(true));
                 } else {
                     // other one's result will be used
                 }
             } 
             else // apparently, other one finished first with result 5 if we are here
             {  
-                promise.set_value(result);
+                if (set_done->exchange(true)) return;
+                promise->set_value(result);
             }
         });
         
         // send 2nd sub-job to rank 1
-        APIRegistry::sendJobSubmissionToRank(1, json2, [&](JsonInterface::Result res, nlohmann::json& response) {
+        APIRegistry::sendJobSubmissionToRank(1, json2, [promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
             assert(res == JsonInterface::Result::ACCEPT);
             LOG(V2_INFO, "Received response for job 2: %s\n", response.dump().c_str());
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
-            if (!first_finished.exchange(true)) // I am the first to finish 
+            if (!first_finished->exchange(true)) // I am the first to finish 
             {
                 if (result != 5) {
-                    promise.set_value(result);
+                    promise->set_value(result);
+                    assert(!set_done->exchange(true));
                 } else {
                     // other one's result will be used
                 }
             } 
             else // apparently, other one finished first with result 5 if we are here
             {  
-                promise.set_value(result);
+                if (set_done->exchange(true)) return;
+                promise->set_value(result);
             }
         });
 

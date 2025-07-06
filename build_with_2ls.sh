@@ -12,7 +12,7 @@ mkdir -p build_2ls
 rm ./build_2ls/*mallob*
 cd build_2ls
 
-if [ $SERVER == "1" ] ; then
+if [ "$SERVER" == "1" ] ; then
 echo "Building for server..."
 CC=$(which mpicc) CXX=$(which mpicxx) cmake -DCMAKE_BUILD_TYPE=RELEASE -DMALLOB_APP_SAT=1 -DMALLOB_APP_2LS=1 \
 -DMALLOB_JEMALLOC_DIR=/nfs/home/omutlu/.user_spack/environments/myenv/.spack-env/view/lib -DMALLOB_USE_JEMALLOC=1 \
