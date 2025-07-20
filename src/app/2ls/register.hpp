@@ -35,12 +35,12 @@ void register_mallob_app_2ls() {
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
 
-            std::cout << "t PROCESSING_TIME: " << stat.processingTime << std::endl;
+            std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
 
             if (!params.solutionToFile().empty())
             {
                 std::ofstream outputFile(params.solutionToFile(), std::ios::app);
-                outputFile << "t PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
+                outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
                 outputFile.close();
             }
             
