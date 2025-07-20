@@ -11,3 +11,4 @@ OPTION_GROUP(grpAppCbmc, "app/cbmc", "CBMC options")
 
 OPT_STRING(cbmcOptions, "cbmc-opts", "", "", "CBMC options to be passed to the solver")
 OPT_STRING(unwindLoops, "unwind-loops", "", "", "unwind loops")
+OPT_STRING(parallelExecution, "parallel-execution", "", "", "parallel execution of unwinding jobs")

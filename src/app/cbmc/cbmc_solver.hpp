@@ -10,22 +10,141 @@
 #include <iostream>
 #include <vector>
 
+#include "app/2ls/cbmc_sat_connector.hpp"
+
 class CBMCSolver
 {
 
 private:
-    std::string _filename;
     Parameters _params;
     APIConnector &_api;
     JobDescription &_desc;
+    std::string _filename;
+
+    std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions)
+    {
+        int size_options = cbmcOptions.size();
+        int argc = 2 + size_options;
+
+        std::vector<const char *> argv;
+        argv.reserve(argc + 1); // +1 for null terminator
+
+        std::string name = "cbmc";
+        argv.push_back(name.c_str());
+        argv.push_back(_filename.c_str());
+
+        for (const auto &opt : cbmcOptions)
+        {
+            argv.push_back(opt.c_str());
+        }
+
+        argv.push_back(nullptr);
+
+        for (int i = 0; i < argc; i++)
+        {
+            LOG(V2_INFO, "CBMC argv[%d]: %s\n", i, argv[i]);
+        }
+
+        cbmc_parse_optionst parse_options(argc, argv.data());
+
+        // Run CBMC
+        std::stringstream buffer;
+        std::stringstream buffer_err;
+        std::streambuf *old;
+        std::streambuf *old_err;
+
+        old = std::cout.rdbuf(buffer.rdbuf());
+        old_err = std::cerr.rdbuf(buffer_err.rdbuf());
+
+        int res = 42;
+
+        try {
+            res = parse_options.main();    // isTerminating is already catched in 2LS and 6 is returned       
+        } catch (const std::runtime_error &e) {
+            LOG(V0_CRIT, "Error in CBMC %s: exiting with 42\n", e.what());         
+        } catch (...) {
+            LOG(V0_CRIT, "Unknown error in CBMC: exiting with 42\n");
+        }
+
+        bool contains_successful = false;
+        bool contains_failed = false;
+        std::string cbmc_output = "";
+        
+        std::cout.rdbuf(old);
+        std::cerr.rdbuf(old_err);
+        cbmc_output = buffer.str() + buffer_err.str() + "\n";
+        std::cout << cbmc_output;
+        
+        if (!_params.solutionToFile().empty())
+        {
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << cbmc_output;
+            outputFile.close();
+        }
+
+        if (cbmc_output.find("VERIFICATION SUCCESSFUL") != std::string::npos)
+        {
+            contains_successful = true;
+        }
+        if (cbmc_output.find("VERIFICATION FAILED") != std::string::npos)
+        {
+            contains_failed = true;
+        }
+
+        postprocess(res, false);
+        return std::make_tuple(res, contains_successful, contains_failed);
+    }
+
+    JobResult postprocess(int res, bool final) {
+        // std::string jobType = _desc.getAppConfiguration().map["__TA"];
+        // if (jobType == "false" || jobType == "parent") {
+        //     jobType = "FINAL";
+        // }
+        std::string jobType = "";
+        if (final)
+            jobType = "FINAL";
+
+        std::cout << "s " << jobType << " EC=" << res << std::endl;
+        std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
+        std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
+
+        if (!_params.solutionToFile().empty())
+        {
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
+            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
+            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
+            outputFile.close();
+        }
+
+        JobResult r;
+        r.id = _desc.getId();
+        r.revision = 0;
+        if (res == 0)
+        {
+            r.result = 20;
+        }
+        else if (res == 10)
+        {
+            r.result = 10;
+        }
+        else
+        {
+            r.result = res;
+        }
+
+        return r;
+    }
 
 public:
-    CBMCSolver(const Parameters &params, APIConnector &api, JobDescription &desc) : _params(params), _api(api), _desc(desc)
+    CBMCSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
+    _params(params), _api(api), _desc(desc), _filename(programFile)
     {
-        //_filename = desc.getAppConfiguration().map.at("file");
-        _filename = params.monoFilename();
+        LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
     }
-    ~CBMCSolver() = default;
+    ~CBMCSolver() {
+        LOG(V2_INFO, "CBMC Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());
+    }
 
     JobResult solve()
     {
@@ -115,98 +234,7 @@ public:
             res = res_unwind;
         }
 
-        if (!_params.solutionToFile().empty())
-        {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
-            outputFile << "\nEC=" + std::to_string(res) + "\n";
-            outputFile.close();
-        }
-
-        JobResult r;
-        r.id = _desc.getId();
-        r.revision = 0;
-        if (res == 0)
-        {
-            r.result = 20;
-        }
-        else if (res == 10)
-        {
-            r.result = 10;
-        }
-        else
-        {
-            r.result = res;
-        }
-
-        return r;
-    }
-
-    std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions)
-    {
-        int size_options = cbmcOptions.size();
-        int argc = 2 + size_options;
-
-        std::vector<const char *> argv;
-        argv.reserve(argc + 1); // +1 for null terminator
-
-        argv.push_back(strdup("cbmc"));
-        argv.push_back(_filename.c_str());
-
-        for (const auto &opt : cbmcOptions)
-        {
-            argv.push_back(opt.c_str());
-        }
-
-        argv.push_back(nullptr);
-
-        for (int i = 0; i < argc; i++)
-        {
-            LOG(V2_INFO, "CBMC argv[%d]: %s\n", i, argv[i]);
-        }
-
-        cbmc_parse_optionst parse_options(argc, argv.data());
-
-        // Run CBMC
-        std::stringstream buffer;
-        std::stringstream buffer_err;
-        std::streambuf *old = std::cout.rdbuf(buffer.rdbuf());
-        std::streambuf *old_err = std::cerr.rdbuf(buffer_err.rdbuf());
-
-        int res = parse_options.main();
-        bool contains_successful = false;
-        bool contains_failed = false;
-
-        std::cout.rdbuf(old);
-        std::cerr.rdbuf(old_err);
-
-        // Write output immediately after run
-        std::string cbmc_output = buffer.str() + buffer_err.str() + "\n" + "CBMCexitcode" 
-                                               + "(" + argv[argc - 2] + " " + argv[argc - 1] 
-                                               +  "): " + std::to_string(res) + "\n";
-
-        if (cbmc_output.find("VERIFICATION SUCCESSFUL") != std::string::npos)
-        {
-            contains_successful = true;
-        }
-        if (cbmc_output.find("VERIFICATION FAILED") != std::string::npos)
-        {
-            contains_failed = true;
-        }
-
-        if (!_params.solutionToFile().empty())
-        {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
-            outputFile << cbmc_output;
-            //outputFile << "\nEC=" + std::to_string(res) + "\n";
-            outputFile.close();
-        }
-        else
-        {
-            LOG(V2_INFO, "CBMC output----------------------------------\n%s\n", cbmc_output.c_str());
-            LOG(V2_INFO, "End of CBMC output----------------------------------\n");
-        }
-
-        return std::make_tuple(res, contains_successful, contains_failed);
+        return postprocess(res, true);
     }
 };
 #endif
