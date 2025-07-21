@@ -25,6 +25,9 @@ public:
         desc.setAppConfigurationEntry("__NC", NC_DEFAULT_VAL);
         
         AppConfiguration& config = desc.getAppConfiguration();
+        if (config.map.count("__UN") == 0) {
+            config.map["__UN"] = !params.parallelUnwind().empty() ? "parent" : "false";
+        }
 
         desc.beginInitialization(0);
         StaticStore<std::string>::insert("cbmc-jobdesc-#" + std::to_string(desc.getId()), filename);
