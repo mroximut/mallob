@@ -73,11 +73,16 @@ private:
         std::cout.rdbuf(old);
         std::cerr.rdbuf(old_err);
         cbmc_output = buffer.str() + buffer_err.str() + "\n";
-        //std::cout << cbmc_output;
+        if (_params.parallelUnwind().empty()) {
+           std::cout << "Unwind: " << (unwind == -1 ? "" : std::to_string(unwind)) << "\n";
+           std::cout << cbmc_output;
+        }
         
         if (!_params.solutionToFile().empty())
         {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            std::ofstream outputFile(_params.solutionToFile() + ((_params.parallelUnwind().empty() || unwind == -1) ? 
+                                                                "" : "_" + std::to_string(unwind)), std::ios::app);
+            outputFile << "Unwind: " << (unwind == -1 ? "" : std::to_string(unwind)) << "\n";
             outputFile << cbmc_output;
             outputFile.close();
         }
@@ -100,9 +105,11 @@ private:
         // if (jobType == "false" || jobType == "parent") {
         //     jobType = "FINAL";
         // }
+        JobResult r;
         std::string jobType = "";
         if (final) {
             jobType = "FINAL";
+            r.setSolution(std::vector<int>({-1}));
         } else {
             jobType = "UNWIND=" + std::to_string(unwind);
         }
@@ -120,7 +127,6 @@ private:
             outputFile.close();
         }
 
-        JobResult r;
         r.id = _desc.getId();
         r.revision = 0;
         if (res == 0)
@@ -250,7 +256,7 @@ private:
     //     submitNext(submitNext);
     // }
     
-    static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<int>> promise,
+    static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
                                   std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
         while (true) {
             int unwind = getNewUnwind(currentUnwind);
@@ -268,9 +274,9 @@ private:
                     assert(res == JsonInterface::Result::ACCEPT);
                     int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
                     if (unwind == 268435456 && !done->exchange(true)) {
-                        promise->set_value(result);
+                        promise->set_value(std::pair<int, int>(result, unwind));
                     } else if (result != 42 && !done->exchange(true)) {
-                        promise->set_value(result);
+                        promise->set_value(std::pair<int, int>(result, unwind));
                     }
                     job_finished = true;
                 }
@@ -288,8 +294,8 @@ private:
 
     JobResult solveParallel()
     {
-        auto promise = std::make_shared<std::promise<int>>();
-        std::shared_future<int> result_future(promise->get_future());
+        auto promise = std::make_shared<std::promise<std::pair<int, int>>>();
+        std::shared_future<std::pair<int, int>> result_future(promise->get_future());
         auto done = std::make_shared<std::atomic<bool>>(false);
 
         std::string parallelWorkers = _params.parallelUnwind();
@@ -314,7 +320,19 @@ private:
                 sendJobsIncrementally(i, base_json, promise, done, currentUnwind);
             });  
         }
-        int res = result_future.get(); 
+        int res = result_future.get().first; 
+        int unwind = result_future.get().second;
+        if (!_params.solutionToFile().empty())
+        {
+            std::ifstream inputFile(_params.solutionToFile() + "_" + std::to_string(unwind));
+            std::cout << "----------------CBMC OUTPUT---------------------" << std::endl;
+            std::cout << inputFile.rdbuf();
+            std::cout << "-------------------------------------------------" << std::endl;
+            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            outputFile << inputFile.rdbuf();
+            outputFile.close();
+            inputFile.close();
+        }
         return postprocess(res, true, -1);  
     }
 

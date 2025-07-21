@@ -113,9 +113,11 @@ private:
     }
 
     JobResult postprocess(int res) {
+        JobResult r;
         std::string jobType = _desc.getAppConfiguration().map["__TA"];
         if (jobType == "false" || jobType == "parent") {
             jobType = "FINAL";
+            r.setSolution(std::vector<int>({-1})); 
         }
 
         std::cout << "s " << jobType << " EC=" << res << std::endl;
@@ -131,7 +133,7 @@ private:
             outputFile.close();
         }
 
-        JobResult r;
+        
         r.id = _desc.getId();
         r.revision = 0;
         if (res == 0)

@@ -33,13 +33,15 @@ void register_mallob_app_cbmc() {
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
 
-            std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
-
-            if (!params.solutionToFile().empty())
-            {
-                std::ofstream outputFile(params.solutionToFile(), std::ios::app);
-                outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
-                outputFile.close();
+            if (result.getSolutionSize() > 0) {
+                std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
+            
+                if (!params.solutionToFile().empty())
+                {
+                    std::ofstream outputFile(params.solutionToFile(), std::ios::app);
+                    outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
+                    outputFile.close();
+                }
             }
             
             json.push_back({
@@ -59,7 +61,7 @@ void register_mallob_app_cbmc() {
                     {"latencyOf1stVolumeUpdate", stat.latencyOf1stVolumeUpdate}
                 }},
             });
-            LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
+            //LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
             return json;
         }
     );
