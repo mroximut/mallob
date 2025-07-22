@@ -21,8 +21,9 @@ private:
     JobDescription &_desc;
     std::string _filename;
 
-    std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions, int unwind = -1)
+    std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions, int unwind = -1, bool print = true)
     {
+        //std::cout << "START UNWIND=" << unwind << std::endl;
         int size_options = cbmcOptions.size();
         int argc = 2 + size_options;
 
@@ -95,12 +96,13 @@ private:
         {
             contains_failed = true;
         }
-
-        postprocess(res, false, unwind);
+        if (print) {
+            postprocess(res, false, unwind);
+        }
         return std::make_tuple(res, contains_successful, contains_failed);
     }
 
-    JobResult postprocess(int res, bool final, int unwind) {
+    JobResult postprocess(int res, bool final, int unwind, int rank = -1) {
         // std::string jobType = _desc.getAppConfiguration().map["__TA"];
         // if (jobType == "false" || jobType == "parent") {
         //     jobType = "FINAL";
@@ -113,12 +115,15 @@ private:
         } else {
             jobType = "UNWIND=" + std::to_string(unwind);
         }
+        if (rank != -1) {
+            jobType += " RANK=" + std::to_string(rank);
+        }
 
         std::cout << "s " << jobType << " EC=" << res << std::endl;
         std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
         std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
 
-        if (!_params.solutionToFile().empty())
+        if (!_params.solutionToFile().empty() && final)
         {
             std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
             outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
@@ -181,80 +186,54 @@ private:
        return ec;
     }
 
-    static int getNewUnwind(std::shared_ptr<std::atomic<int>>& currentUnwind) {
-        int old_val = currentUnwind->load();
-        if (old_val == 268435456) {
-            return -1; 
+    // static int getNewUnwind(std::shared_ptr<std::atomic<int>>& currentUnwind) {
+    //     int old_val = currentUnwind->load();
+    //     if (old_val == 268435456) {
+    //         return -1; 
+    //     }
+    //     int new_val;
+    //     do {
+    //         double new_vald = old_val * 1.7;
+    //         if (new_vald > 3000) {
+    //             new_val = 268435456;
+    //         } else {
+    //             new_val = static_cast<int>(new_vald);
+    //         }
+    //     } while (!currentUnwind->compare_exchange_weak(old_val, new_val));
+    //     return new_val;
+    // }
+
+    static int getNewUnwind(std::shared_ptr<std::atomic<int>>& currentIndex) {
+        static const std::array<int, 11> unwind_values = {2, 6, 12, 17, 21, 40, 200, 400, 1025, 2049, 268435456};
+        int idx = currentIndex->fetch_add(1);
+        if (idx >= static_cast<int>(unwind_values.size())) {
+            return -1;
         }
-        int new_val;
-        do {
-            double new_vald = old_val * 1.7;
-            if (new_vald > 3000) {
-                new_val = 268435456;
-            } else {
-                new_val = static_cast<int>(new_vald);
-            }
-        } while (!currentUnwind->compare_exchange_weak(old_val, new_val));
-        return new_val;
+        return unwind_values[idx];
     }
 
-    // static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<int>> promise, 
-    //                        std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
-        
-    //     int unwind = getNewUnwind(currentUnwind);
-    //     if (unwind == -1) {
-    //         return;
-    //     }
-    //     json["name"] = "unwind-" + std::to_string(unwind);
-    //     json["configuration"]["__UN"] = std::to_string(unwind);
-        
-    //     APIRegistry::sendJobSubmissionToRank(rank, json, [json, promise, done, currentUnwind, rank, unwind](JsonInterface::Result res, nlohmann::json& response) mutable {
-    //         assert(res == JsonInterface::Result::ACCEPT);
-    //         LOG(V2_INFO, "Received response for job %d: %s\n", rank, response.dump().c_str());
-    //         int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
-    //         if (unwind == 268435456 && !done->exchange(true)) {
-    //             LOG(V2_INFO, "Job %d finished with max unwind value\n", rank);
-    //             promise->set_value(result);
-    //             return;  
-    //         }
-    //         if (result != 42 && !done->exchange(true)) {
-    //             promise->set_value(result);
-    //             LOG(V2_INFO, "Job %d finished with result %d\n", rank, result);
-    //         } else if (result == 42 && !done->load()) {
-    //             LOG(V2_INFO, "Job %d finished with result 42, continuing with next unwind value\n", rank);
-    //             sendNextJobToRank(rank, json, promise, done, currentUnwind);
-    //         }
-    //     });
-    // }
+    static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise, 
+                              std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
+        int unwind = getNewUnwind(currentUnwind);
+        if (unwind == -1 || done->load()) {
+            return;
+        }
+        json["name"] = "unwind-" + std::to_string(unwind);
+        json["configuration"]["__UN"] = std::to_string(unwind);
+        json["configuration"]["RANK"] = std::to_string(rank);
 
-    // static void sendJobsSelfCalling(int rank, nlohmann::json json, std::shared_ptr<std::promise<int>> promise,
-    //                                 std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
-    //     auto submitNext = [rank, json, promise, done, currentUnwind](auto&& submitNextRef) mutable -> void {
-    //         int unwind = getNewUnwind(currentUnwind);
-    //         if (unwind == -1 || done->load()) {
-    //             return;
-    //         }
-    //         nlohmann::json job_json = json;
-    //         job_json["name"] = "unwind-" + std::to_string(unwind);
-    //         job_json["configuration"]["__UN"] = std::to_string(unwind);
-
-    //         APIRegistry::sendJobSubmissionToRank(rank, job_json, [promise, done, currentUnwind, rank, unwind, submitNextRef](JsonInterface::Result res, nlohmann::json& response) mutable {
-    //             assert(res == JsonInterface::Result::ACCEPT);
-    //             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
-    //             if (unwind == 268435456 && !done->exchange(true)) {
-    //                 promise->set_value(result);
-    //                 return;
-    //             }
-    //             if (result != 42 && !done->exchange(true)) {
-    //                 promise->set_value(result);
-    //             } else if (result == 42 && !done->load()) {
-    //                 // Instead of recursion, call the lambda again for the next job
-    //                 submitNextRef(submitNextRef);
-    //             }
-    //         });
-    //     };
-    //     submitNext(submitNext);
-    // }
+        APIRegistry::sendJobSubmissionToRank(rank, json, [json, promise, done, currentUnwind, rank, unwind](JsonInterface::Result res, nlohmann::json& response) mutable {
+            assert(res == JsonInterface::Result::ACCEPT);
+            int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            if ((unwind == 268435456 || result != 42) && !done->exchange(true)) {
+                promise->set_value(std::pair<int, int>(result, unwind));
+                return;
+            }
+            if (result == 42 && !done->load()) {
+                sendNextJobToRank(rank, json, promise, done, currentUnwind);
+            }
+        });
+    }
     
     static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
                                   std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
@@ -266,6 +245,7 @@ private:
             nlohmann::json job_json = json;
             job_json["name"] = "unwind-" + std::to_string(unwind);
             job_json["configuration"]["__UN"] = std::to_string(unwind);
+            job_json["configuration"]["RANK"] = std::to_string(rank);
 
             std::atomic<bool> job_finished(false);
 
@@ -303,16 +283,19 @@ private:
 
         nlohmann::json base_json = {
             {"user", "admin"},
-            {"name", "mono-job"},
+            {"name", "unwind"},
             {"files", {_filename}},
             {"priority", 1.000},
             {"application", "CBMC"},
             {"configuration", {
-                {"__UN", ""}
-            }}
+                {"__UN", ""},
+                {"RANK", ""}
+                }
+            }
         };
 
-        auto currentUnwind = std::make_shared<std::atomic<int>>(2);
+        //auto currentUnwind = std::make_shared<std::atomic<int>>(2);
+        auto currentUnwind = std::make_shared<std::atomic<int>>(0);
 
         for (int i = 0; i < numWorkers; i++) {
             //sendNextJobToRank(i, base_json, promise, done, currentUnwind);
@@ -325,9 +308,9 @@ private:
         if (!_params.solutionToFile().empty())
         {
             std::ifstream inputFile(_params.solutionToFile() + "_" + std::to_string(unwind));
-            std::cout << "----------------CBMC OUTPUT---------------------" << std::endl;
-            std::cout << inputFile.rdbuf();
-            std::cout << "-------------------------------------------------" << std::endl;
+            //std::cout << "----------------CBMC OUTPUT---------------------" << std::endl;
+            //std::cout << inputFile.rdbuf();
+            //std::cout << "-------------------------------------------------" << std::endl;
             std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
             outputFile << inputFile.rdbuf();
             outputFile.close();
@@ -382,10 +365,12 @@ public:
 
         if (_desc.getAppConfiguration().map["__UN"] != "false") 
         {
-            int unwind = std::stoi(_desc.getAppConfiguration().map["__UN"]); 
+            int unwind = std::stoi(_desc.getAppConfiguration().map["__UN"]);
+            int rank = std::stoi(_desc.getAppConfiguration().map["RANK"]);
+            std::cout << "START UNWIND=" << unwind << " RANK=" << rank << std::endl; 
             int ec = solveForUnwindValue(unwind, cbmcOptions);
             LOG(V2_INFO, "CBMC result for unwind value %d\n", unwind);
-            return postprocess(ec, false, unwind);
+            return postprocess(ec, false, unwind, rank);
         }    
         else 
         {
