@@ -62,10 +62,10 @@ public:
         _job_stream(_name)
         {
         Parameters params;
-        APIConnector* api = APIRegistry::get();
+        APIConnector& api = APIRegistry::get();
         JobDescription desc;
 
-        _mallob_processor = new MallobSatJobStreamProcessor(params, *api, desc,
+        _mallob_processor = new MallobSatJobStreamProcessor(params, api, desc,
             _name, _stream_id, true, _job_stream.getSynchronizer());
         _job_stream.addProcessor(_mallob_processor);
         LOG(V2_INFO, "New: %s\n", _name.c_str());
