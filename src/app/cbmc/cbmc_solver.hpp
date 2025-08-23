@@ -75,13 +75,12 @@ private:
         std::cerr.rdbuf(old_err);
         cbmc_output = buffer.str() + buffer_err.str() + "\n";
         if (_params.parallelUnwind().empty()) {
-           std::cout << "Unwind: " << (unwind == -1 ? "" : std::to_string(unwind)) << "\n";
-           std::cout << cbmc_output;
+           LOG(V0_CRIT, "Unwind: %s\n%s", (unwind == -1 ? "" : std::to_string(unwind)).c_str(), cbmc_output.c_str());
         }
         
-        if (!_params.solutionToFile().empty())
+        if (!_params.cbmcLog().empty())
         {
-            std::ofstream outputFile(_params.solutionToFile() + ((_params.parallelUnwind().empty() || unwind == -1) ? 
+            std::ofstream outputFile(_params.cbmcLog() + ((_params.parallelUnwind().empty() || unwind == -1) ? 
                                                                 "" : "_" + std::to_string(unwind)), std::ios::app);
             outputFile << "Unwind: " << (unwind == -1 ? "" : std::to_string(unwind)) << "\n";
             outputFile << cbmc_output;
@@ -99,6 +98,7 @@ private:
         if (print) {
             postprocess(res, false, unwind);
         }
+        
         return std::make_tuple(res, contains_successful, contains_failed);
     }
 
@@ -119,13 +119,13 @@ private:
             jobType += " RANK=" + std::to_string(rank);
         }
 
-        std::cout << "s " << jobType << " EC=" << res << std::endl;
-        std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
-        std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
+        LOG_OMIT_PREFIX(V0_CRIT, "s %s EC=%d\n", jobType.c_str(), res);
+        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_TIME: %.3f\n", jobType.c_str(), CBMCSatConnector::getGlobalSatTime());
+        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_CALLS: %d\n", jobType.c_str(), CBMCSatConnector::getSatCalls());
 
-        if (!_params.solutionToFile().empty() && final)
+        if (!_params.cbmcLog().empty() && final)
         {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
             outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
             outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
             outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
@@ -235,42 +235,42 @@ private:
         });
     }
     
-    static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
-                                  std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
-        while (true) {
-            int unwind = getNewUnwind(currentUnwind);
-            if (unwind == -1 || done->load()) {
-                break;
-            }
-            nlohmann::json job_json = json;
-            job_json["name"] = "unwind-" + std::to_string(unwind);
-            job_json["configuration"]["__UN"] = std::to_string(unwind);
-            job_json["configuration"]["RANK"] = std::to_string(rank);
+    // static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
+    //                               std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
+    //     while (true) {
+    //         int unwind = getNewUnwind(currentUnwind);
+    //         if (unwind == -1 || done->load()) {
+    //             break;
+    //         }
+    //         nlohmann::json job_json = json;
+    //         job_json["name"] = "unwind-" + std::to_string(unwind);
+    //         job_json["configuration"]["__UN"] = std::to_string(unwind);
+    //         job_json["configuration"]["RANK"] = std::to_string(rank);
 
-            std::atomic<bool> job_finished(false);
+    //         std::atomic<bool> job_finished(false);
 
-            APIRegistry::sendJobSubmissionToRank(rank, job_json, 
-                [promise, done, &job_finished, rank, unwind](JsonInterface::Result res, nlohmann::json& response) mutable {
-                    assert(res == JsonInterface::Result::ACCEPT);
-                    int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
-                    if (unwind == 268435456 && !done->exchange(true)) {
-                        promise->set_value(std::pair<int, int>(result, unwind));
-                    } else if (result != 42 && !done->exchange(true)) {
-                        promise->set_value(std::pair<int, int>(result, unwind));
-                    }
-                    job_finished = true;
-                }
-            );
+    //         APIRegistry::sendJobSubmissionToRank(rank, job_json, 
+    //             [promise, done, &job_finished, rank, unwind](JsonInterface::Result res, nlohmann::json& response) mutable {
+    //                 assert(res == JsonInterface::Result::ACCEPT);
+    //                 int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+    //                 if (unwind == 268435456 && !done->exchange(true)) {
+    //                     promise->set_value(std::pair<int, int>(result, unwind));
+    //                 } else if (result != 42 && !done->exchange(true)) {
+    //                     promise->set_value(std::pair<int, int>(result, unwind));
+    //                 }
+    //                 job_finished = true;
+    //             }
+    //         );
 
-            while (!job_finished.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+    //         while (!job_finished.load()) {
+    //             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    //         }
 
-            if (done->load()) {
-                break;
-            }
-        }
-    }
+    //         if (done->load()) {
+    //             break;
+    //         }
+    //     }
+    // }
 
     JobResult solveParallel()
     {
@@ -298,25 +298,29 @@ private:
         auto currentUnwind = std::make_shared<std::atomic<int>>(0);
 
         for (int i = 0; i < numWorkers; i++) {
-            //sendNextJobToRank(i, base_json, promise, done, currentUnwind);
-            ProcessWideThreadPool::get().addTask([=]() {
-                sendJobsIncrementally(i, base_json, promise, done, currentUnwind);
-            });  
+            sendNextJobToRank(i, base_json, promise, done, currentUnwind);
+            //ProcessWideThreadPool::get().addTask([=]() {
+            //    sendJobsIncrementally(i, base_json, promise, done, currentUnwind);
+            //});  
         }
         int res = result_future.get().first; 
         int unwind = result_future.get().second;
-        if (!_params.solutionToFile().empty())
+        LOG(V0_CRIT, "Parallel unwind finished with result %d and unwind value %d\n", res, unwind);
+        
+        if (!_params.cbmcLog().empty())
         {
-            std::ifstream inputFile(_params.solutionToFile() + "_" + std::to_string(unwind));
+            std::ifstream inputFile(_params.cbmcLog() + "_" + std::to_string(unwind));
             //std::cout << "----------------CBMC OUTPUT---------------------" << std::endl;
             //std::cout << inputFile.rdbuf();
             //std::cout << "-------------------------------------------------" << std::endl;
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+
+            std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
             outputFile << inputFile.rdbuf();
             outputFile.close();
             inputFile.close();
         }
-        return postprocess(res, true, -1);  
+        auto result = postprocess(res, true, unwind, -1);
+        return result; 
     }
 
 public:
@@ -367,7 +371,7 @@ public:
         {
             int unwind = std::stoi(_desc.getAppConfiguration().map["__UN"]);
             int rank = std::stoi(_desc.getAppConfiguration().map["RANK"]);
-            std::cout << "START UNWIND=" << unwind << " RANK=" << rank << std::endl; 
+            LOG(V0_CRIT, "START UNWIND=%d RANK=%d\n", unwind, rank);
             int ec = solveForUnwindValue(unwind, cbmcOptions);
             LOG(V2_INFO, "CBMC result for unwind value %d\n", unwind);
             return postprocess(ec, false, unwind, rank);

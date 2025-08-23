@@ -34,11 +34,11 @@ void register_mallob_app_cbmc() {
             auto json = nlohmann::json::array();
 
             if (result.getSolutionSize() > 0) {
-                std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
-            
-                if (!params.solutionToFile().empty())
+                //std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
+                LOG_OMIT_PREFIX(V0_CRIT, "t FINAL PROCESSING_TIME: %.3f\n", stat.processingTime);
+                if (!params.cbmcLog().empty())
                 {
-                    std::ofstream outputFile(params.solutionToFile(), std::ios::app);
+                    std::ofstream outputFile(params.cbmcLog(), std::ios::app);
                     outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
                     outputFile.close();
                 }

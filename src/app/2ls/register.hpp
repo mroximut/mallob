@@ -38,9 +38,9 @@ void register_mallob_app_2ls() {
             if (result.getSolutionSize() > 0) {
                 std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
 
-                if (!params.solutionToFile().empty())
+                if (!params.cbmcLog().empty())
                 {
-                    std::ofstream outputFile(params.solutionToFile(), std::ios::app);
+                    std::ofstream outputFile(params.cbmcLog(), std::ios::app);
                     outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
                     outputFile.close();
                 }

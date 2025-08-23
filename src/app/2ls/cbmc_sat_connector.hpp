@@ -123,8 +123,8 @@ public:
             _failed_lits.clear();
             for (int lit : solution) _failed_lits.insert(lit);
         }
-        std::cout << "t " << _stream_id << " " << _revision << " " << result << " " << time << std::endl;
-
+        //std::cout << "t " << _stream_id << " " << _revision << " " << result << " " << time << std::endl;
+        LOG_OMIT_PREFIX(V0_CRIT, "t %d %d %d %.3f\n", _stream_id, _revision, result, time);
         return result;
     }
 
@@ -161,7 +161,8 @@ public:
     ~CBMCSatConnector()
     {
         LOG(V2_INFO, "Done: %s\n", _name.c_str());
-        std::cout << "t SAT_TIME: " << global_sat_time << std::endl;
+        //std::cout << "t SAT_TIME: " << global_sat_time << std::endl;
+        LOG_OMIT_PREFIX(V0_CRIT, "t SAT_TIME: %.3f\n", global_sat_time);
         _job_stream.interrupt();
         _job_stream.finalize();
     }

@@ -11,3 +11,4 @@ OPTION_GROUP(grpApp2ls, "app/2ls", "2LS options")
 
 OPT_STRING(twolsOptions, "2ls-opts", "", "", "2LS options to be passed to the solver")
 OPT_STRING(terminationAnalysis, "termination-analysis", "", "", "start two jobs a la sv-comp")
+OPT_STRING(cbmcLog, "cbmc-log", "", "", "log file for CBMC output")

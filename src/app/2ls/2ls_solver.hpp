@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "cbmc_sat_connector.hpp"
+#include <deque>
 
 class TwoLSSolver
 {
@@ -53,7 +54,7 @@ private:
         std::streambuf *old;
         std::streambuf *old_err;
 
-        if (!_params.solutionToFile().empty())
+        if (!_params.cbmcLog().empty())
         {
             old = std::cout.rdbuf(buffer.rdbuf());
             old_err = std::cerr.rdbuf(buffer_err.rdbuf());
@@ -94,16 +95,16 @@ private:
         bool contains_successful = false;
         bool contains_failed = false;
 
-        if (!_params.solutionToFile().empty())
+        if (!_params.cbmcLog().empty())
         {
             std::cout.rdbuf(old);
             std::cerr.rdbuf(old_err);
             std::string cbmc_output = buffer.str() + buffer_err.str() + "\n";
 
-            if (!lastLinesContains(10, _params.solutionToFile(), "termination") &&
-            !lastLinesContains(10, _params.solutionToFile(), "nontermination"))
+            if (!lastLinesContains(10, _params.cbmcLog(), "termination") &&
+            !lastLinesContains(10, _params.cbmcLog(), "nontermination"))
             {   
-                std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+                std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
                 outputFile << cbmc_output;
                 outputFile.close();
             }
@@ -124,9 +125,9 @@ private:
         std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
         std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
 
-        if (!_params.solutionToFile().empty())
+        if (!_params.cbmcLog().empty())
         {
-            std::ofstream outputFile(_params.solutionToFile(), std::ios::app);
+            std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
             outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
             outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
             outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
