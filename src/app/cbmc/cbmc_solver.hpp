@@ -218,7 +218,7 @@ private:
         if (unwind == -1 || done->load()) {
             return;
         }
-        json["name"] = "unwind-" + std::to_string(unwind);
+        json["name"] = "unwind-" + std::to_string(rank);//std::to_string(unwind);
         json["configuration"]["__UN"] = std::to_string(unwind);
         json["configuration"]["RANK"] = std::to_string(rank);
 
@@ -235,6 +235,14 @@ private:
         });
     }
     
+    static void sendInterruptToRank(int rank, nlohmann::json json) {
+        json["name"] = "unwind-" + std::to_string(rank);
+        json["interrupt"] = true;
+        APIRegistry::sendJobSubmissionToRank(rank, json, [rank, json](JsonInterface::Result res, nlohmann::json& response) {
+            assert(res == JsonInterface::Result::ACCEPT);
+            LOG(V0_CRIT, "Interrupt job sent to rank %d\n", rank);
+        });
+    }
     // static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
     //                               std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
     //     while (true) {
@@ -306,6 +314,19 @@ private:
         int res = result_future.get().first; 
         int unwind = result_future.get().second;
         LOG(V0_CRIT, "Parallel unwind finished with result %d and unwind value %d\n", res, unwind);
+
+        nlohmann::json interrupt_json = {
+            {"user", "admin"},
+            {"name", "unwind"},
+            {"files", {_filename}},
+            {"priority", 1.000},
+            {"application", "CBMC"},
+            {"interrupt", true}
+        };
+
+        for (int i = 0; i < numWorkers; i++) {
+            sendInterruptToRank(i, interrupt_json);
+        }
         
         if (!_params.cbmcLog().empty())
         {
