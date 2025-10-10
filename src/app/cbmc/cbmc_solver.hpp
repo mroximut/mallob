@@ -324,9 +324,9 @@ private:
             {"interrupt", true}
         };
 
-        for (int i = 0; i < numWorkers; i++) {
-            sendInterruptToRank(i, interrupt_json);
-        }
+        // for (int i = 0; i < numWorkers; i++) {
+        //     sendInterruptToRank(i, interrupt_json);
+        // }
         
         if (!_params.cbmcLog().empty())
         {

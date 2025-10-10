@@ -71,7 +71,7 @@ public:
             auto time = Timer::elapsedSeconds();
             _backlog_lits.insert(_backlog_lits.end(), task.lits.begin(), task.lits.end());
             time = Timer::elapsedSeconds() - time;
-            usleep(1'000'000 * std::max(0.0, 0.1 - time)); // 50 ms minus the time taken to copy the literals
+            usleep(1'000'000 * std::max(1.0, 0.0 - time)); // 50 ms minus the time taken to copy the literals
             if (_terminator(task.rev)) {
                 return; // Task has become obsolete in the meantime, so skip solving
             }
@@ -122,15 +122,16 @@ public:
             }
         }*/
         nlohmann::json copy(_json_base);
-        if (_params.compressFormula()) {
-            auto out = FormulaCompressor::compress(newLiterals.data(), newLiterals.size(),
-                assumptions.data(), assumptions.size());
-            newLiterals = std::move(*out.vec);
-        } else {
+        //LOG(V0_CRIT, _params.compressFormula() ? "[COMP] " : "[UNCOMP] ");
+        // if (_params.compressFormula()) {
+        //     auto out = FormulaCompressor::compress(newLiterals.data(), newLiterals.size(),
+        //         assumptions.data(), assumptions.size());
+        //     newLiterals = std::move(*out.vec);
+        // } else {
             newLiterals.push_back(INT32_MAX);
-            for (int a : assumptions) newLiterals.push_back(a);
+            for (int a : assumptions) {newLiterals.push_back(a);}
             newLiterals.push_back(0);
-        }
+        //}
         StaticStore<std::vector<int>>::insert(_json_base["name"].get<std::string>(), std::move(newLiterals));
         copy["internalliterals"] = _json_base["name"].get<std::string>();
         if (!descriptionLabel.empty()) {
