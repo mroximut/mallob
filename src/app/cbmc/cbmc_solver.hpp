@@ -212,7 +212,7 @@ private:
         return unwind_values[idx];
     }
 
-    static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise, 
+    static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::tuple<int, int, int>>> promise, 
                               std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
         int unwind = getNewUnwind(currentUnwind);
         if (unwind == -1 || done->load()) {
@@ -226,7 +226,7 @@ private:
             assert(res == JsonInterface::Result::ACCEPT);
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
             if ((unwind == 268435456 || result != 42) && !done->exchange(true)) {
-                promise->set_value(std::pair<int, int>(result, unwind));
+                promise->set_value(std::tuple<int, int, int>(result, unwind, rank));
                 return;
             }
             if (result == 42 && !done->load()) {
@@ -282,8 +282,8 @@ private:
 
     JobResult solveParallel()
     {
-        auto promise = std::make_shared<std::promise<std::pair<int, int>>>();
-        std::shared_future<std::pair<int, int>> result_future(promise->get_future());
+        auto promise = std::make_shared<std::promise<std::tuple<int, int, int>>>();
+        std::shared_future<std::tuple<int, int, int>> result_future(promise->get_future());
         auto done = std::make_shared<std::atomic<bool>>(false);
 
         std::string parallelWorkers = _params.parallelUnwind();
@@ -311,8 +311,9 @@ private:
             //    sendJobsIncrementally(i, base_json, promise, done, currentUnwind);
             //});  
         }
-        int res = result_future.get().first; 
-        int unwind = result_future.get().second;
+        int res = std::get<0>(result_future.get());
+        int unwind = std::get<1>(result_future.get());
+        int rank = std::get<2>(result_future.get());
         LOG(V0_CRIT, "Parallel unwind finished with result %d and unwind value %d\n", res, unwind);
 
         nlohmann::json interrupt_json = {
@@ -325,6 +326,9 @@ private:
         };
 
         for (int i = 0; i < numWorkers; i++) {
+            //if (i == rank) {
+            //    continue;
+            //}
             sendInterruptToRank(i, interrupt_json);
         }
         
