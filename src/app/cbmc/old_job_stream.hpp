@@ -10,7 +10,7 @@
 #include "util/static_store.hpp"
 #include "util/params.hpp"
 
-class SatJobStream {
+class OldJobStream {
 
 private:
     //const Parameters& _params;
@@ -28,9 +28,12 @@ private:
     bool _rejected {false};
     std::string _expected_result_job_name;
 
+    int _nb_vars {0};
+    int _nb_clauses {0};
+
 public:
-    SatJobStream(APIConnector& api, int streamId, bool incremental) :
-        _api(api),_incremental(incremental), 
+    OldJobStream(APIConnector& api, int streamId, bool incremental) :
+        _api(api),_incremental(incremental),
         _username("cbmc#") {
 
         _base_job_name = "satjob-" + std::to_string(streamId) + "-rev-";
@@ -76,6 +79,26 @@ public:
         //for (auto key : {"__NV", "__NC", "__NO"})
         //    _json_base["configuration"][key] = _desc.getAppConfiguration().map.at(key);
         //if (_params.useChecksums()) _json_base["checksum"] = {chksum.count(), chksum.get()};
+        _json_base["configuration"]["__XL"] = "-1";
+        _json_base["configuration"]["__XU"] = "-1";
+        _json_base["configuration"]["__NV"] = std::to_string(_nb_vars);
+        _json_base["configuration"]["__NC"] = std::to_string(_nb_clauses);
+        std::ofstream os("/tmp/oldjob.cnf", std::ios::app);
+        if (!os) return;
+        os << "c revision " << _subjob_counter << "\n";
+        os << "c new clauses " << newLiterals.size() << "\n";
+        os << "c assumptions " << assumptions.size() << "\n";
+        for (size_t i = 0; i < newLiterals.size(); ++i) {
+            int lit = newLiterals[i];
+            os << lit;
+            os << (lit == 0 ? "\n" : " ");
+        }
+        if (!assumptions.empty()) {
+            os << "a";
+            for (int a : assumptions) os << " " << a;
+            os << "\n";
+        }
+        os.close();
 
         if (_incremental && _json_base.contains("name")) {
             _json_base["precursor"] = _username + std::string(".") + _json_base["name"].get<std::string>();
@@ -85,10 +108,13 @@ public:
         _json_base["name"] = _base_job_name + std::to_string(subjob);
 
         nlohmann::json copy(_json_base);
+        newLiterals.push_back(INT32_MAX);
+        for (int a : assumptions) newLiterals.push_back(a);
+        newLiterals.push_back(0);
         StaticStore<std::vector<int>>::insert(_json_base["name"].get<std::string>(), std::move(newLiterals));
         copy["internalliterals"] = _json_base["name"].get<std::string>();
         //copy["literals"] = std::move(newLiterals);
-        copy["assumptions"] = assumptions;
+        //copy["assumptions"] = assumptions;
         if (!descriptionLabel.empty()) {
             copy["description-id"] = descriptionLabel;
         }
@@ -157,4 +183,9 @@ public:
         assert(!_pending);
         return _json_result;
     }
+    void setNbVarsAndClauses(int nbVars, int nbClauses) {
+        _nb_vars = nbVars;
+        _nb_clauses = nbClauses;
+    }
+
 };

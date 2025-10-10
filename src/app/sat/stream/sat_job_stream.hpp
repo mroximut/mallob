@@ -25,8 +25,8 @@ private:
 public:
     SatJobStream(const std::string& baseName) : _name(baseName) {}
     ~SatJobStream() {
-        //interrupt();
-        //finalize();
+        interrupt();
+        finalize();
     }
 
     SatJobStreamProcessor::Synchronizer& getSynchronizer() {

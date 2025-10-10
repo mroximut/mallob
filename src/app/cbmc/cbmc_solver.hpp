@@ -325,12 +325,12 @@ private:
             {"interrupt", true}
         };
 
-        for (int i = 0; i < numWorkers; i++) {
+        //for (int i = 0; i < numWorkers; i++) {
             //if (i == rank) {
             //    continue;
             //}
-            sendInterruptToRank(i, interrupt_json);
-        }
+            //sendInterruptToRank(i, interrupt_json);
+        //}
         
         if (!_params.cbmcLog().empty())
         {
