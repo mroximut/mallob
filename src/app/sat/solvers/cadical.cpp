@@ -6,6 +6,7 @@
  */
 
 #include <assert.h>
+#include <cstdint>
 #include <stdint.h>
 #include <functional>
 #include <algorithm>
@@ -15,6 +16,8 @@
 #include "app/sat/data/definitions.hpp"
 #include "app/sat/proof/lrat_connector.hpp"
 #include "cadical.hpp"
+#include "app/sat/proof/trusted/trusted_utils.hpp"
+#include "app/sat/solvers/solving_replay.hpp"
 #include "util/logger.hpp"
 #include "util/distribution.hpp"
 #include "app/sat/data/clause.hpp"
@@ -30,7 +33,7 @@
 
 Cadical::Cadical(const SolverSetup& setup)
 	: PortfolioSolverInterface(setup),
-	  solver(new CaDiCaL::Solver), terminator(*setup.logger), 
+	  solver(new CaDiCaL::Solver), terminator(*setup.logger, _replay), 
 	  learner(_setup), learnSource(_setup, [this]() {
 		  Mallob::Clause c;
 		  fetchLearnedClause(c, GenericClauseStore::ANY);
@@ -48,38 +51,45 @@ Cadical::Cadical(const SolverSetup& setup)
 		LOGGER(_logger, V3_VERB, "will write profiling to %s\n", profileFileString.c_str());
 	}
 
+	bool okay = solver->set("quiet", 1); assert(okay); // no messy logging output
+
 	// In certified UNSAT mode?
 	if (setup.certifiedUnsat) {
 
 		int solverRank = setup.globalId;
 		int maxNumSolvers = setup.maxNumSolvers;
 
-		auto descriptor = _lrat ? "on-the-fly LRAT checking" : "LRAT proof production";
-		LOGGER(_logger, V3_VERB, "Initializing rank=%i size=%i DI=%i #C=%ld IDskips=%i with %s\n",
+		auto descriptor = _lrat ? "ImpChk" : "LRUP production";
+		LOGGER(_logger, V3_VERB, "Init rank=%i size=%i DI=%i #C=%ld IDskips=%i with %s\n",
 			solverRank, maxNumSolvers, getDiversificationIndex(), setup.numOriginalClauses, setup.nbSkippedIdEpochs,
 			descriptor);
 
-		bool okay;
 		okay = solver->set("lrat", 1); assert(okay); // enable LRAT proof logging
 		okay = solver->set("lratsolverid", solverRank); assert(okay); // set this solver instance's ID
 		okay = solver->set("lratsolvercount", maxNumSolvers); assert(okay); // set # solvers
-		okay = solver->set("lratorigclscount", setup.numOriginalClauses); assert(okay);
+		okay = solver->set("lratorigclscount", INT32_MAX); assert(okay);
 		okay = solver->set("lratskippedepochs", setup.nbSkippedIdEpochs); assert(okay);
+		//okay = solver->set("log", 1); assert(okay); // need to compile CaDiCaL with -l (logging enabled)
 
 		if (_lrat) {
 			okay = solver->set("signsharedcls", 1); assert(okay);
+			//okay = solver->set("compact", 0); assert(okay);
+			//okay = solver->set("log", 1); assert(okay);
 			solver->trace_proof_internally(
 				[&](unsigned long id, const int* lits, int nbLits, const unsigned long* hints, int nbHints, int glue) {
-					_lrat->push(LratOp {id, lits, nbLits, hints, nbHints, glue});
-					return true;
+					_lrat->push(LratOp(id, lits, nbLits, hints, nbHints, glue));
 				},
 				[&](unsigned long id, const int* lits, int nbLits, const uint8_t* sigData, int sigSize) {
-					_lrat->push(LratOp {id, lits, nbLits, sigData});
-					return true;
+					// TODO Do we encode "revision" immediately after the default signature?
+					int rev = * (int*) (sigData + SIG_SIZE_BYTES);
+					_lrat->push(LratOp(id, lits, nbLits, sigData, rev));
 				},
 				[&](const unsigned long* ids, int nbIds) {
-					_lrat->push(LratOp {ids, nbIds});
-					return true;
+					_lrat->push(LratOp(ids, nbIds));
+				},
+				[&](unsigned long id) {
+					unsatConclusionId = id;
+					LOGGER(_logger, V2_INFO, "CONCLUSION ID %lu\n", unsatConclusionId);
 				}
 			);
 		} else {
@@ -105,7 +115,7 @@ void Cadical::diversify(int seed) {
 
 	if (seedSet) return;
 
-	LOGGER(_logger, V3_VERB, "Diversifying %i\n", getDiversificationIndex());
+	LOGGER(_logger, V3_VERB, "Diversifying %i seed=%i\n", getDiversificationIndex(), seed);
 	bool okay = solver->set("seed", seed);
 	assert(okay);
 
@@ -171,6 +181,13 @@ void Cadical::diversify(int seed) {
 			}
 		}
 	}
+
+	// Disable clause import for the 0th solver thread in incremental solving
+	// for the lowest possible best-case response latencies.
+	//if (_setup.isJobIncremental && _setup.doIncrementalSolving && _setup.globalId == 0
+	//	&& _setup.maxNumSolvers >= 8)
+	//	_clause_import_enabled = false;
+
 	assert(okay);
 }
 
@@ -206,9 +223,12 @@ SatResult Cadical::solve(size_t numAssumptions, const int* assumptions) {
 		this->assumptions.push_back(lit);
 		//addConditionalLit(-lit);
 	}
+	unsatConclusionId = 0;
 
 	// start solving
 	int res = solver->solve();
+	if (_setup.onTheFlyChecking)
+		solver->conclude();
 
 	// Flush solver logs
 	_logger.flush();
@@ -226,13 +246,15 @@ SatResult Cadical::solve(size_t numAssumptions, const int* assumptions) {
 }
 
 void Cadical::setSolverInterrupt() {
-	solver->terminate(); // acknowledged faster / checked more frequently by CaDiCaL
+	if (_replay.getMode() == SolvingReplay::NONE)
+		solver->terminate(); // acknowledged faster / checked more frequently by CaDiCaL
 	terminator.setInterrupt();
 }
 
 void Cadical::unsetSolverInterrupt() {
 	terminator.unsetInterrupt();
-	solver->unset_terminate();
+	if (_replay.getMode() == SolvingReplay::NONE)
+		solver->unset_terminate();
 }
 
 std::vector<int> Cadical::getSolution() {
@@ -266,6 +288,11 @@ int Cadical::getVariablesCount() {
 
 int Cadical::getSplittingVariable() {
 	return solver->lookahead();
+}
+std::vector<std::vector<int>> Cadical::cube(int depth, int& status) {
+	auto result = solver->generate_cubes(depth, 1);
+	status = result.status;
+	return std::move(result.cubes);
 }
 
 void Cadical::writeStatistics(SolverStatistics& stats) {

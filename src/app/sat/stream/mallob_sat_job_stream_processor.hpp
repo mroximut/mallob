@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <stdlib.h>
 #include <string>
 #include <unistd.h>
@@ -11,6 +12,7 @@
 
 #include "app/sat/data/formula_compressor.hpp"
 #include "app/sat/data/model_string_compressor.hpp"
+#include "core/job_slot_registry.hpp"
 #include "data/job_description.hpp"
 #include "interface/api/api_connector.hpp"
 #include "interface/json_interface.hpp"
@@ -19,7 +21,6 @@
 #include "util/logger.hpp"
 #include "util/params.hpp"
 #include "util/static_store.hpp"
-#include "util/assert.hpp"
 #include "util/sys/timer.hpp"
 
 class MallobSatJobStreamProcessor : public SatJobStreamProcessor {
@@ -45,13 +46,19 @@ private:
     bool _pending_task_interrupted {false};
 
     bool _began_nontrivial_solving {false};
-    std::vector<int> _backlog_lits;
+    SatTask _backlog_task {SatTask::RAW};
+    bool _initialized_backlog_task {false};
+    bool _finalized {false};
+    Mutex _mtx_finalize;
+
+    std::shared_ptr<JobSlotRegistry::JobSlot> _job_slot;
 
 public:
     MallobSatJobStreamProcessor(const Parameters& params, APIConnector& api, JobDescription& desc,
             const std::string& baseUserName, int streamId, bool incremental, Synchronizer& sync) :
         SatJobStreamProcessor(sync), _params(params), _api(api), _stream_id(streamId),
-        _incremental(incremental), _username(baseUserName) {}
+        _incremental(incremental), _username(baseUserName),
+        _job_slot(new JobSlotRegistry::JobSlot(_username, [&]() {reinitialize();})) {}
 
     ~MallobSatJobStreamProcessor() override {}
 
@@ -64,12 +71,16 @@ public:
     }
 
     virtual void process(SatTask& task) override {
+        auto time = Timer::elapsedSeconds();
+        if (!_initialized_backlog_task) {
+            _backlog_task.type = task.type;
+            _initialized_backlog_task = true;
+        }
+        _backlog_task.integrate(task);
 
         if (!_began_nontrivial_solving) {
             // If no distributed job was submitted yet, we try to avoid this overhead;
             // we wait for a short while if a more lightweight solver finds a solution immediately.
-            auto time = Timer::elapsedSeconds();
-            _backlog_lits.insert(_backlog_lits.end(), task.lits.begin(), task.lits.end());
             time = Timer::elapsedSeconds() - time;
             usleep(1'000'000 * std::max(1.0, 0.0 - time)); // 50 ms minus the time taken to copy the literals
             if (_terminator(task.rev)) {
@@ -78,15 +89,14 @@ public:
             // Task is not (yet) obsolete after the wait, so we now begin proper distributed solving
             LOG(V2_INFO, "%s awakes for rev. %i\n", _name.c_str(), task.rev);
             _began_nontrivial_solving = true;
-            task.lits = std::move(_backlog_lits);
+
+            JobSlotRegistry::acquireSlot(_job_slot);
 
             _base_job_name = "satjob-" + std::to_string(_stream_id) + "-rev-";
-            _json_base = nlohmann::json {
-                {"user", _username},
-                {"incremental", _incremental},
-                {"priority", 1},
-                {"application", "SAT"}
-            };
+            _json_base["user"] = _username;
+            _json_base["incremental"] = _incremental;
+            _json_base["priority"] = 1;
+            _json_base["application"] = "SAT";
             _json_base["files"] = std::vector<std::string>();
             if (!_json_base["configuration"].count("__XL"))
                 _json_base["configuration"]["__XL"] = "-1";
@@ -94,10 +104,11 @@ public:
                 _json_base["configuration"]["__XU"] = "-1";
             _json_base["configuration"]["__NV"] = std::to_string(_nb_vars);
             _json_base["configuration"]["__NC"] = std::to_string(_nb_clauses);
+            _json_base["configuration"]["__EO"] = std::to_string(1000 * _stream_id);
         }
 
-        auto& newLiterals = task.lits;
-        const auto& assumptions = task.assumptions;
+        auto& newLiterals = _backlog_task.lits;
+        const auto& assumptions = _backlog_task.assumptions;
         auto chksum = task.chksum;
         const auto& descriptionLabel = task.descLabel;
         float priority = task.priority;
@@ -122,16 +133,17 @@ public:
             }
         }*/
         nlohmann::json copy(_json_base);
-        //LOG(V0_CRIT, _params.compressFormula() ? "[COMP] " : "[UNCOMP] ");
         // if (_params.compressFormula()) {
         //     auto out = FormulaCompressor::compress(newLiterals.data(), newLiterals.size(),
         //         assumptions.data(), assumptions.size());
         //     newLiterals = std::move(*out.vec);
-        // } else {
+        // } else if (task.type == SatJobStreamProcessor::SatTask::SPLIT) {
             newLiterals.push_back(INT32_MAX);
             for (int a : assumptions) {newLiterals.push_back(a);}
             newLiterals.push_back(0);
+            newLiterals.push_back(INT32_MIN);
         //}
+
         StaticStore<std::vector<int>>::insert(_json_base["name"].get<std::string>(), std::move(newLiterals));
         copy["internalliterals"] = _json_base["name"].get<std::string>();
         if (!descriptionLabel.empty()) {
@@ -159,13 +171,15 @@ public:
                     solution = result["result"]["solution"].get<std::vector<int>>();
                 }
                 bool winner = concludeRevision(rev, resultCode, std::move(solution));
-                if (winner) LOG(V2_INFO, "%s rev. %i (internally %i) won with res=%i\n", _name.c_str(), rev, subjob, resultCode);
+                if (winner) LOG(V2_INFO, "%s rev. %i (internally %i) won with res=%i solsize=%i\n",
+                    _name.c_str(), rev, subjob, resultCode, solution.size());
                 _task_pending = false;
             });
             if (response == JsonInterface::Result::DISCARD) {
                 concludeRevision(_pending_rev, 0, {});
                 _task_pending = false;
             }
+            _job_slot->startActiveTime();
         } catch (...) {
             LOG(V0_CRIT, "[ERROR] uncaught exception while submitting JSON\n");
             abort();
@@ -176,9 +190,15 @@ public:
             usleep(sleepInterval);
             sleepInterval = std::min(2500UL, (unsigned long) std::ceil(1.2*sleepInterval));
         }
+        _job_slot->endActiveTime();
+
+        _backlog_task = SatTask{_backlog_task.type};
     }
 
     virtual void finalize() override {
+        LOG(V4_VVER, "%s do finalize\n", _name.c_str());
+        auto lock = _mtx_finalize.getLock();
+        _finalized = true;
         SatJobStreamProcessor::finalize();
         if (!_began_nontrivial_solving) return;
         while (_task_pending) usleep(3000);
@@ -189,13 +209,38 @@ public:
         nlohmann::json copy(_json_base);
         copy["done"] = true;
         // The callback is never called.
-        LOG(V2_INFO, "%s closing API\n", _name.c_str());
+        LOG(V4_VVER, "%s closing API\n", _name.c_str());
         _api.submit(copy, [&](nlohmann::json& result) {assert(false);});
-        LOG(V2_INFO, "%s closed API\n", _name.c_str());
+        LOG(V4_VVER, "%s closed API\n", _name.c_str());
+        _job_slot->release();
+    }
+
+    void reinitialize() {
+        if (_finalized || !_began_nontrivial_solving) return;
+
+        auto lock = _mtx_finalize.getTryLock();
+        if (!lock.owns_lock()) return; // already in the process of being finalized
+
+        LOG(V3_VERB, "%s evicted: re-initialize\n", _name.c_str());
+        while (_task_pending) usleep(3000);
+        if (!_incremental) return;
+        if (!_json_base.contains("name")) return;
+        _json_base["precursor"] = _username + std::string(".") + _json_base["name"].get<std::string>();
+        _json_base["name"] = _base_job_name + std::to_string(_subjob_counter++);
+        nlohmann::json copy(_json_base);
+        copy["done"] = true;
+        // The callback is never called.
+        LOG(V4_VVER, "%s closing API\n", _name.c_str());
+        _api.submit(copy, [&](nlohmann::json& result) {assert(false);});
+        LOG(V4_VVER, "%s closed API\n", _name.c_str());
+
+        _began_nontrivial_solving = false;
+        _backlog_task = _cb_retrieve_full_task();
+        _json_base = {};
     }
 
     void setGroupId(const std::string& groupId, int minVar = -1, int maxVar = -1) {
-        LOG(V2_INFO, "MAXSAT %s group ID %s V=[%i,%i]\n", _base_job_name.c_str(), groupId.c_str(), minVar, maxVar);
+        LOG(V2_INFO, "%s group ID %s V=[%i,%i]\n", _base_job_name.c_str(), groupId.c_str(), minVar, maxVar);
         _json_base["group-id"] = groupId;
         _json_base["configuration"]["__XL"] = std::to_string(minVar);
         _json_base["configuration"]["__XU"] = std::to_string(maxVar);
@@ -209,7 +254,7 @@ public:
     }
 
 private:
-        bool checkTaskPending(int rev) {
+    bool checkTaskPending(int rev) {
         if (!_task_pending) return false;
         if (_pending_task_interrupted) return true;
         if (!_terminator(rev)) return true;

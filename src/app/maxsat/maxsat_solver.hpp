@@ -12,6 +12,7 @@
 #include "app/sat/data/definitions.hpp"
 #include "app/sat/job/sat_constants.h"
 #include "comm/mympi.hpp"
+#include "core/job_slot_registry.hpp"
 #include "data/job_description.hpp"
 #include "data/job_result.hpp"
 #include "data/job_transfer.hpp"
@@ -89,6 +90,9 @@ public:
         _params(params), _api(api), _desc(desc) {
 
         LOG(V2_INFO, "Mallob client-side MaxSAT solver, by Jeremias Berg & Dominik Schreiber\n");
+
+        if (!JobSlotRegistry::isInitialized()) JobSlotRegistry::init(params);
+
         parseFormula();
         pickEncodingStrategy();
     }
@@ -239,7 +243,9 @@ public:
                 encoder.reset(new GeneralizedTotalizer(_instance->nbVars, _instance->objective));
             encoder->setClauseCollector([&](int lit) {_shared_lits_to_add.push_back(lit);});
             encoder->setAssumptionCollector([&](int lit) {abort();}); // no assumptions at this stage!
-            encoder->encode(_instance->lowerBound, _instance->upperBound, _instance->upperBound);
+            auto lb = _instance->lowerBound; auto ub = std::min(_instance->upperBound, _instance->bestCost-1); auto max = _instance->upperBound;
+            encoder->encode(lb, ub, max);
+            LOG(V2_INFO, "MAXSAT shared encoder encoding bounds [%lu,%lu,%lu]\n", lb, ub, max);
 
             // Add the encoder and its encoding to each search
             for (auto& search : searches) {

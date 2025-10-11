@@ -22,13 +22,16 @@ OPTION_GROUP(grpAppSat, "app/sat", "SAT solving options")
  OPT_BOOL(compressFormula,                  "cf", "compress-formula", false, "Compress formula serialization (reorders clauses and literals in clauses)")
  OPT_BOOL(compressModels,                   "cm", "compress-models", false, "Compress found models into hexadecimal vector in output")
  OPT_STRING(groundTruthModel,               "gtm", "", "", "Ground truth model to test learned clauses against")
+ OPT_INT(replay, "replay", "", 0, 0, 2, "0: nothing, 1: record solver threads' behavior, 2: replay solving")
+ OPT_BOOL(internalStreamProcessor, "isp", "", true, "For incremental SAT job streams, run a local single-threaded SAT solver for latency hiding")
+ OPT_INT(jobSlots, "js", "", 0, 0, LARGE_INT, "Max. concurrent SAT job streams per client process (0: use # MPI processes)")
 
 OPTION_GROUP(grpAppSatSharing, "app/sat/sharing", "Clause sharing configuration")
  OPT_INT(bufferedImportedClsGenerations,    "bicg", "buffered-imported-cls-generations", 4,        1,   LARGE_INT, 
     "Number of subsequent full clause sharings to fit in each solver's import buffer")
  OPT_INT(clauseBufferBaseSize,              "cbbs", "clause-buffer-base-size",           0,     0,   0,   
-    "DISCONTINUED - use exportVolumePerThread (-evpt) instead")
- OPT_INT(exportVolumePerThread,             "evpt", "export-volume-per-thread",          350,   0,   LARGE_INT,   
+    "DISCONTINUED - use exportVolumePerThread (-evpt) instead, which is supposed to have a one-size-fits-all default")
+ OPT_INT(exportVolumePerThread,             "evpt", "export-volume-per-thread",          500,   0,   LARGE_INT,
     "Max. number of clause literals to export per thread per sharing operation")
  OPT_INT(clauseBufferLimitMode,             "cblm", "clause-buffer-limit-mode",          1,        0,   1,
     "Mode for computing clause buffer limit w.r.t. worker count (0: unlimited growth based on levels of binary tree, 1: limited growth based on exponential function")
@@ -45,13 +48,13 @@ OPTION_GROUP(grpAppSatSharing, "app/sat/sharing", "Clause sharing configuration"
     "Group and prioritize clauses in buffers by the sum of clause length and LBD score")
  OPT_INT(maxLbdPartitioningSize,            "mlbdps", "max-lbd-partition-size",          2,        1,   LARGE_INT,
     "Store clauses with up to this LBD in separate buckets")
- OPT_INT(minNumChunksForImportPerSolver,    "mcips", "min-import-chunks-per-solver",     5,       1,   LARGE_INT,      
-    "Min. number of cbbs-sized chunks for buffering incoming clauses for import per solver")
- OPT_INT(numExportChunks,                   "nec", "export-chunks",                      5,       1,   LARGE_INT,
-    "Number of cbbs-sized chunks for buffering produced clauses for export")
- OPT_INT(qualityClauseLengthLimit,          "qcll", "quality-clause-length-limit",       8,        0,   255,
+ OPT_INT(minNumChunksForImportPerSolver,    "mcips", "min-import-chunks-per-solver",     10,       1,   LARGE_INT,
+    "Min. number of single-export-sized chunks for buffering incoming clauses for import per solver")
+ OPT_INT(numExportChunks,                   "nec", "export-chunks",                      10,       1,   LARGE_INT,
+    "Number of single-export-sized chunks for buffering produced clauses for export")
+ OPT_INT(qualityClauseLengthLimit,          "qcll", "quality-clause-length-limit",       60,        0,   255,
     "Clauses up to this length are considered \"high quality\"")
- OPT_INT(qualityLbdLimit,                   "qlbdl", "quality-lbd-limit",                2,        0,   255,
+ OPT_INT(qualityLbdLimit,                   "qlbdl", "quality-lbd-limit",                60,        0,   255,
     "Clauses with an LBD score up to this value are considered \"high quality\"")
  OPT_INT(clauseFilterMode,                  "cfm", "clause-filter-mode",                 3,        0,   3, 
     "0 = no filtering, 1 = bloom filters, 2 = exact filters, 3 = exact filters with distributed filtering in a 2nd all-reduction")
@@ -111,6 +114,7 @@ OPTION_GROUP(grpAppSatProof, "app/sat/proof", "Production of UNSAT proofs")
  OPT_STRING(proofOutputFile,              "proof", "",                                 "",                      "Enable UNSAT proof production, writing final LRAT proof to specified destination (output by rank zero)")
  OPT_BOOL(onTheFlyChecking,               "otfc", "on-the-fly-checking",               false,                   "Enable on-the-fly checking of local derivations; generate and validate signatures for shared clauses")
  OPT_BOOL(onTheFlyCheckModel,             "otfcm", "on-the-fly-check-model",           true,                    "Also check satisfiable assignment in on-the-fly checking (prevents deletion of orig. clauses in one checker per process)")
+ OPT_BOOL(forceIncrementalTrustedParser,  "fitp", "force-incremental-trusted-parser",  false,                   "Always parse formula with trusted incremental parser even with -otfc=0")
  OPT_BOOL(distributedProofAssembly,       "dpa", "distributed-proof-assembly",         true,                    "Distributed UNSAT proof assembly into a single file")
  OPT_BOOL(interleaveProofMerging,         "ipm", "interleave-proof-merging",           true,                    "Interleave filtering and merging of proof lines")
  OPT_BOOL(proofDebugging,                 "proof-debugging", "",                       false,                   "Output debugging information into separate files - expensive and large!")
@@ -122,7 +126,3 @@ OPTION_GROUP(grpAppSatProof, "app/sat/proof", "Production of UNSAT proofs")
  OPT_FLOAT(satSolvingWallclockLimit,      "sswl", "sat-solving-wallclock-limit",       0,    0, LARGE_INT,      "Cancel job if not done solving after this many seconds (0: no limit)")
  OPT_FLOAT(clauseErrorChancePerMille,     "cecpm", "clause-error-chance-per-mille",    0,    0, 1000,  "Chance per mille for tampering with some literal in a shared clause")
  OPT_FLOAT(derivationErrorChancePerMille, "decpm", "deriv-error-chance-per-mille",     0,    0, 1000,  "Chance per mille for tampering with some on-the-fly checking clause derivation")
- OPT_STRING(fifoDirectives, "fifo-directives", "", "", "For internal use only")
- OPT_STRING(fifoFeedback, "fifo-feedback", "", "", "For internal use only")
- OPT_STRING(fifoParsedFormula, "fifo-parsed-formula", "", "", "For internal use only")
- OPT_STRING(formulaInput, "formula-input", "", "", "For internal use only")
