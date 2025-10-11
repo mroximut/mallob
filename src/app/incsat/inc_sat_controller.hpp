@@ -76,16 +76,16 @@ public:
 
     std::pair<int, std::vector<int>> solveNextRevision(std::vector<int>&& clauses, std::vector<int>&& assumptions) {
         if (!_stream) {
-            if (_params.onTheFlyChecking())
-                _problem_file = TmpDir::getMachineLocalTmpDir() + "/edu.kit.iti.mallob.incsattparse."
-                    + std::to_string(_desc.getId()) + "." + std::to_string(_stream_id);
+            //if (_params.onTheFlyChecking())
+            //    _problem_file = TmpDir::getMachineLocalTmpDir() + "/edu.kit.iti.mallob.incsattparse."
+            //        + std::to_string(_desc.getId()) + "." + std::to_string(_stream_id);
             initStream(true);
         }
 
-        if (!_params.onTheFlyChecking()) {
+        //if (!_params.onTheFlyChecking()) {
             return _stream->stream.solve({SatJobStreamProcessor::SatTask::Type::SPLIT,
                 std::move(clauses), std::move(assumptions)});
-        }
+        //}
         auto futWrite = ProcessWideThreadPool::get().addTask([&]() {
             // Output formula increment to the pipe file
             std::ofstream& ofs = _tppa->getFormulaToParserStream();
@@ -136,8 +136,8 @@ private:
             setup.jobId = _desc.getId();
             setup.jobname = _name + ".int";
             setup.isJobIncremental = true;
-            setup.onTheFlyChecking = _params.onTheFlyChecking();
-            setup.onTheFlyCheckModel = _params.onTheFlyChecking() && _params.onTheFlyCheckModel();
+            setup.onTheFlyChecking = false;//_params.onTheFlyChecking();
+            setup.onTheFlyCheckModel = false;//_params.onTheFlyChecking() && _params.onTheFlyCheckModel();
             auto internalProcessor = new InternalSatJobStreamProcessor(
                 setup, _stream->stream.getSynchronizer());
             _stream->stream.addProcessor(internalProcessor);
@@ -196,10 +196,10 @@ private:
     bool isTimeoutHit(const Parameters* params, JobDescription* desc, float startTime) const {
         if (Terminator::isTerminating())
             return true;
-        if (params->timeLimit() > 0 && Timer::elapsedSeconds() >= params->timeLimit())
-            return true;
-        if (desc->getWallclockLimit() > 0 && (Timer::elapsedSeconds() - startTime) >= desc->getWallclockLimit())
-            return true;
+        // if (params->timeLimit() > 0 && Timer::elapsedSeconds() >= params->timeLimit())
+        //     return true;
+        // if (desc->getWallclockLimit() > 0 && (Timer::elapsedSeconds() - startTime) >= desc->getWallclockLimit())
+        //     return true;
         return false;
     }
 };
