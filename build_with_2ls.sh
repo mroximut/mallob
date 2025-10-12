@@ -2,6 +2,10 @@
 
 BUILD_SUFFIX=""
 APP_INCSAT=""
+
+# also change in lib/2ls/lib/cbmc/build_with_mallob.sh : to build_2ls_inc
+# also change in lib/2ls/lib/cbmc/src/solvers/Makefile : to build_inc
+
 if [ "$inc" = "1" ] || [ "$INC" = "1" ] ; then
     BUILD_SUFFIX="_inc"
     APP_INCSAT="-DMALLOB_APP_INCSAT=1"
