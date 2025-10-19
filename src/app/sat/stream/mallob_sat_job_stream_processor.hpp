@@ -71,7 +71,7 @@ public:
             auto time = Timer::elapsedSeconds();
             _backlog_lits.insert(_backlog_lits.end(), task.lits.begin(), task.lits.end());
             time = Timer::elapsedSeconds() - time;
-            usleep(1'000'000 * std::max(1.0, 0.0 - time)); // 50 ms minus the time taken to copy the literals
+            usleep(1'000'000 * std::max(0.0, 0.1 - time)); // 100 ms minus the time taken to copy the literals
             if (_terminator(task.rev)) {
                 return; // Task has become obsolete in the meantime, so skip solving
             }
