@@ -1,13 +1,13 @@
 
 # Add MaxSAT-specific sources to main Mallob executable
-set(MAXSAT_MALLOB_SOURCES src/app/sat/solvers/cadical.cpp src/app/sat/solvers/portfolio_solver_interface.cpp src/app/maxsat/parse/maxsat_reader.cpp src/app/maxsat/parse/static_maxsat_parser_store.cpp src/app/maxsat/maxsat_solver.cpp src/app/maxsat/maxsat_search_procedure.cpp src/app/maxsat/encoding/cardinality_encoding.cpp src/app/maxsat/encoding/openwbo/enc_adder.cpp)
+set(MAXSAT_MALLOB_SOURCES src/app/sat/solvers/cadical.cpp src/app/sat/solvers/portfolio_solver_interface.cpp src/app/maxsat/parse/maxsat_reader.cpp src/app/maxsat/parse/static_maxsat_parser_store.cpp src/app/maxsat/maxsat_solver.cpp src/app/maxsat/encoding/cardinality_encoding.cpp src/app/maxsat/encoding/openwbo/enc_adder.cpp)
 set(MALLOB_COREPLUSCOMM_SOURCES ${MALLOB_COREPLUSCOMM_SOURCES} ${MAXSAT_MALLOB_SOURCES} CACHE INTERNAL "")
 
 #message("commons+SAT sources: ${BASE_SOURCES}") # Use to debug
 
 # Include external libraries as necessary
 set(BASE_LINK_DIRS ${BASE_LINK_DIRS} lib/rustsat CACHE INTERNAL "")
-set(BASE_LIBS ${BASE_LIBS} rustsat CACHE INTERNAL "")
+set(BASE_LIBS ${BASE_LIBS} rustsat dl CACHE INTERNAL "")
 set(BASE_INCLUDES ${BASE_INCLUDES} lib/rustsat/capi CACHE INTERNAL "")
 if(MALLOB_USE_MAXPRE)
     add_definitions(-DMALLOB_USE_MAXPRE=1)

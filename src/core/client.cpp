@@ -88,21 +88,16 @@ void Client::readIncomingJobs() {
                 auto lock = _done_job_lock.getLock();
                 for (int jobId : data.dependencies) {
                     if (!_done_jobs.count(jobId)) {
-                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : #%i not done!\n", data.description->getId(), jobId);
                         dependenciesSatisfied = false;
                         break;
                     }
                 }
                 if (data.description->isIncremental() && data.description->getRevision() > 0) {
                     // Check if the precursor of this incremental job is already done
-                    if (!_done_jobs.count(data.description->getId())) {
-                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : inc. precursor not done!\n", data.description->getId());
+                    if (!_done_jobs.count(data.description->getId()))
                         dependenciesSatisfied = false; // no job with this ID is done yet
-                    }
-                    else if (data.description->getRevision() != _done_jobs[data.description->getId()].revision+1) {
-                        LOG(V1_WARN, "[WARN] dependency of #%i not satisfied : inc. precursor has wrong revision!\n", data.description->getId());
+                    else if (data.description->getRevision() != _done_jobs[data.description->getId()].revision+1)
                         dependenciesSatisfied = false; // job with correct revision not done yet
-                    }
                 }
             }
             if (!dependenciesSatisfied) {
@@ -144,15 +139,12 @@ void Client::readIncomingJobs() {
                 // Read job
                 int id = foundJob.description->getId();
                 float time = Timer::elapsedSeconds();
-                bool success = true;
                 auto filesList = foundJob.getFilesList();
                 foundJob.description->beginInitialization(foundJob.description->getRevision());
-                if (foundJob.hasFiles()) {
-                    LOGGER(log, V3_VERB, "[T] Reading job #%i rev. %i %s ...\n", id, foundJob.description->getRevision(), filesList.c_str());
-                    success = app_registry::getJobReader(foundJob.description->getApplicationId())(
-                        _params, foundJob.files, *foundJob.description
-                    );
-                }
+                LOGGER(log, V3_VERB, "[T] Reading job #%i rev. %i %s ...\n", id, foundJob.description->getRevision(), filesList.c_str());
+                bool success = app_registry::getJobReader(foundJob.description->getApplicationId())(
+                    _params, foundJob.files, *foundJob.description
+                );
                 foundJob.description->endInitialization();
                 if (!success) {
                     LOGGER(log, V1_WARN, "[T] [WARN] Unsuccessful read - skipping #%i\n", id);
@@ -638,8 +630,6 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     // - In "mono" mode of operation, we only want the original job, not a secondary one.
     bool primaryJob = !_params.monoFilename.isSet() || jobId == _mono_job_id;
     bool constructSolutionStrings = primaryJob;
-    // - Only if the result actually encompasses a solution.
-    constructSolutionStrings &= resultCode == RESULT_SAT || resultCode == RESULT_OPTIMUM_FOUND;
     // - Some sort of output is in fact desired by the user.
     constructSolutionStrings &= _params.solutionToFile.isSet() || (jobId == _mono_job_id && !_params.omitSolution());
     if (constructSolutionStrings) {
@@ -749,8 +739,6 @@ void Client::handleAbort(MessageHandle& handle) {
 
 void Client::finishJob(int jobId, bool hasIncrementalSuccessors) {
 
-    LOG(V1_WARN, "finishJob(%i, %i)\n", jobId, hasIncrementalSuccessors);
-
     if (!_active_jobs.count(jobId)) {
         // try to fetch client-side job
         for (auto it = _done_client_side_jobs.begin(); it != _done_client_side_jobs.end(); ++it) {
@@ -773,7 +761,6 @@ void Client::finishJob(int jobId, bool hasIncrementalSuccessors) {
         }
     } else {
         auto lock = _done_job_lock.getLock();
-        LOG(V1_WARN, "Adding #%i rev. %i to done jobs\n", jobId, _active_jobs[jobId]->getRevision());
         _done_jobs[jobId] = DoneInfo{_active_jobs[jobId]->getRevision(), _active_jobs[jobId]->getChecksum()};
     }
 
@@ -797,7 +784,7 @@ Client::~Client() {
 
     Watchdog watchdog(_params.watchdog(), 1'000, true);
     watchdog.setWarningPeriod(1'000);
-    watchdog.setAbortPeriod(20'000);
+    watchdog.setAbortPeriod(_params.watchdogAbortMillis());
 
     for (auto& pending : _pending_subtasks) pending.future.get();
 
