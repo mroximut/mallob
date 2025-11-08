@@ -24,7 +24,9 @@
 #include "app/cbmc/old_job_stream.hpp"
 #include "app/sat/data/model_string_compressor.hpp"
 
-class CBMCSatConnector
+#include "app/cbmc/cbmc_sat_solver.hpp"
+
+class CBMCSatConnector : public CBMCSatSolver
 {
 
 private:
@@ -61,15 +63,13 @@ public:
         return _stream_id++;
     }
 
-    CBMCSatConnector(const std::string& name, bool oldJobStream = false):
+    CBMCSatConnector(const std::string& name, Parameters& params, JobDescription& desc, bool oldJobStream = false):
         _stream_id(getNextStreamId()),
         _name(name + ":" + std::to_string(_stream_id) + "(SAT)"),
         _job_stream(_name),
         _old_job_stream_used(oldJobStream) {
 
-        Parameters params;
         APIConnector& api = APIRegistry::get();
-        JobDescription desc;
 
         if (!_old_job_stream_used) {
             _mallob_processor = new MallobSatJobStreamProcessor(params, api, desc, _name, _stream_id, true, _job_stream.getSynchronizer());

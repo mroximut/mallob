@@ -6,11 +6,13 @@
 #include "data/job_description.hpp"
 #include "data/job_result.hpp"
 #include "cbmc/cbmc_parse_options.h"
+#include "solvers/sat/satcheck_mallob.h"
 #include "util/sys/thread_pool.hpp"
 #include <iostream>
 #include <vector>
 
 #include "app/2ls/cbmc_sat_connector.hpp"
+#include "app/cbmc/cbmc_sat_solver.hpp"
 
 class CBMCSolver
 {
@@ -353,6 +355,9 @@ public:
     _params(params), _api(api), _desc(desc), _filename(programFile)
     {
         LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
+        satcheck_mallobt::createCBMCSatSolver = [&]() {
+            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc);
+        };
     }
     ~CBMCSolver() {
         LOG(V2_INFO, "CBMC Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());
