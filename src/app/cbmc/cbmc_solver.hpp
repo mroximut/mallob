@@ -22,6 +22,7 @@ private:
     APIConnector &_api;
     JobDescription &_desc;
     std::string _filename;
+    DTaskTracker _dTaskTracker;
 
     std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions, int unwind = -1, bool print = true)
     {
@@ -352,12 +353,11 @@ private:
 
 public:
     CBMCSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
-    _params(params), _api(api), _desc(desc), _filename(programFile)
+    _params(params), _api(api), _desc(desc), _filename(programFile), _dTaskTracker(params)
     {
         LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
-        DTaskTracker dTaskTracker(_params);
-        satcheck_mallobt::createCBMCSatSolver = [&]() {
-            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, dTaskTracker);
+        satcheck_mallobt::createCBMCSatSolver = [this]() {
+            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, _dTaskTracker);
         };
     }
     ~CBMCSolver() {
