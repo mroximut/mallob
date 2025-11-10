@@ -355,8 +355,9 @@ public:
     _params(params), _api(api), _desc(desc), _filename(programFile)
     {
         LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
+        DTaskTracker dTaskTracker(_params);
         satcheck_mallobt::createCBMCSatSolver = [&]() {
-            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc);
+            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, dTaskTracker);
         };
     }
     ~CBMCSolver() {

@@ -10,9 +10,8 @@
 #include <unistd.h>
 #include <vector>
 
-#include "app/sat/stream/internal_sat_job_stream_processor.hpp"
-#include "app/sat/stream/mallob_sat_job_stream_processor.hpp"
-#include "app/sat/stream/sat_job_stream.hpp"
+#include "app/incsat/inc_sat_controller.hpp"
+#include "app/sat/stream/sat_job_stream_garbage_collector.hpp"
 #include "data/job_description.hpp"
 #include "interface/api/api_connector.hpp"
 #include "robin_set.h"
@@ -37,8 +36,7 @@ private:
     int _stream_id;
     std::string _name;
 
-    SatJobStream _job_stream;
-    MallobSatJobStreamProcessor* _mallob_processor {nullptr};
+    std::unique_ptr<IncSatController> _incsat;
     OldJobStream* _old_job_stream {nullptr};
     bool _old_job_stream_used {false};
 
@@ -63,21 +61,19 @@ public:
         return _stream_id++;
     }
 
-    CBMCSatConnector(const std::string& name, Parameters& params, JobDescription& desc, bool oldJobStream = false):
+    CBMCSatConnector(const std::string& name, Parameters& params, JobDescription& desc, DTaskTracker& dTaskTracker, bool oldJobStream = false):
         _stream_id(getNextStreamId()),
         _name(name + ":" + std::to_string(_stream_id) + "(SAT)"),
-        _job_stream(_name),
         _old_job_stream_used(oldJobStream) {
 
         APIConnector& api = APIRegistry::get();
 
         if (!_old_job_stream_used) {
-            _mallob_processor = new MallobSatJobStreamProcessor(params, api, desc, _name, _stream_id, true, _job_stream.getSynchronizer());
-            _job_stream.addProcessor(_mallob_processor);
-            LOG(V2_INFO, "New: %s\n", _name.c_str());
+            _incsat.reset(new IncSatController(params, api, desc, dTaskTracker));
+            _incsat->setInnerTerminator([&]() {
+                return isTerminating();
+        });
 
-            auto internalProcessor = new InternalSatJobStreamProcessor(true, _job_stream.getSynchronizer());
-            _job_stream.addProcessor(internalProcessor);
         } else {
             _old_job_stream = new OldJobStream(api, _stream_id, true);
         }
@@ -106,97 +102,17 @@ public:
     int solve() {
         _revision++;
         sat_calls++;
-
-        if (!_old_job_stream_used) {
-            _job_stream.setTerminator([&]() {return isTerminating();});
-            if (_revision == 0 && _mallob_processor) {
-                _mallob_processor->setInitialSize(_nb_vars, _nb_clauses);
-            }
-            //dumpCNF("/tmp/beforenewstream.cnf");
-        } else {
-            if (_revision == 0 && _old_job_stream) {
-                _old_job_stream->setNbVarsAndClauses(_nb_vars, _nb_clauses);
-            }
+        //dumpCNF("/tmp/beforenewstream.cnf");    
+        if (_revision == 0 && _old_job_stream) {
+            _old_job_stream->setNbVarsAndClauses(_nb_vars, _nb_clauses);
         }
 
         auto time = Timer::elapsedSeconds();
         LOG(V2_INFO, "%s submit rev. %i (%i lits)\n", _name.c_str(), _revision, _lits.size());
 
-        // int max_lit = 0;
-        // for (auto &lit : _lits) {
-        //     max_lit = std::max(max_lit, std::abs(lit));
-        // } 
-        // LOG(V0_CRIT, "Max lit in rev. %i is %i, nb_vars is %i\n", _revision, max_lit, _nb_vars);
-        // int max_ass = 0;
-        // for (auto &lit : _assumptions) {
-        //     max_ass = std::max(max_ass, std::abs(lit));
-        //}
-        //LOG(V0_CRIT, "Max ass in rev. %i is %i, nb_vars is %i\n", _revision, max_ass, _nb_vars);
+        auto [resultCode, solution] = _old_job_stream_used ? solveOldJobStream(std::move(_lits), _assumptions) : 
+                        _incsat->solveNextRevision(std::move(_lits), std::move(_assumptions));
 
-        auto [resultCode, solution] = _old_job_stream_used ? solveOldJobStream(std::move(_lits), _assumptions) : _job_stream.solve(std::move(_lits), _assumptions);
-        // auto copyLits1 = _lits;
-        // auto copyLits2 = _lits;
-        // auto copyLits3 = _lits;
-        // auto copyAss1  = _assumptions;
-        // auto copyAss2  = _assumptions;
-        // auto [resultCode1, solution1] = solveOldJobStream(std::move(copyLits1), copyAss1);
-        // auto [resultCode2, solution2] = _job_stream.solve(std::move(copyLits2), copyAss2);
-        // if (resultCode1 != resultCode2) {
-        //     LOG(V0_CRIT, "ERROR: %s rev. %i got different results from old and new stream: %i vs %i\n",
-        //         _name.c_str(), _revision, resultCode1, resultCode2);
-        // }
-        // for (auto solution : {&solution1, &solution2}) {
-        // if (resultCode1 == 10 && solution->size() > 0) {  // Only verify if SAT
-        //     bool satisfies_all = true;
-        //     std::vector<int> current_clause;
-            
-        //     for (int lit : copyLits3) {
-        //         if (lit == 0) {  // End of clause
-        //             bool clause_satisfied = false;
-        //             for (int clause_lit : current_clause) {
-        //                 int var = std::abs(clause_lit);
-        //                 if (var >= solution->size()) {
-        //                     LOG(V0_CRIT, "ERROR: Solution index out of bounds: var %d, solution size %lu\n", 
-        //                         var, solution->size());
-        //                     continue;
-        //                 }
-        //                 int val = (*solution)[var];
-        //                 if ((clause_lit > 0 && val > 0) || (clause_lit < 0 && val < 0)) {
-        //                     clause_satisfied = true;
-        //                     break;
-        //                 }
-        //             }
-        //             if (!clause_satisfied) {
-        //                 LOG(V0_CRIT, "ERROR: %s rev. %i solution doesn't satisfy a clause\n", 
-        //                     _name.c_str(), _revision);
-        //                 satisfies_all = false;
-        //                 break;
-        //             }
-        //             current_clause.clear();
-        //         } else {
-        //             current_clause.push_back(lit);
-        //         }
-        //     }
-            
-        //     if (satisfies_all) {
-        //         LOG(V2_INFO, "%s rev. %i: solution verified - satisfies all clauses\n", 
-        //             _name.c_str(), _revision);
-        //     }
-        // }
-        //}
-        // if (solution1.size() != solution2.size()) {
-        //     LOG(V0_CRIT, "ERROR: %s rev. %i got different solution sizes from old and new stream: %lu vs %lu\n",
-        //         _name.c_str(), _revision, solution1.size(), solution2.size());
-        // }
-        // for (size_t i = 0; i < solution1.size(); i++) {
-        //     if (solution1[i] != solution2[i]) {
-        //         LOG(V0_CRIT, "ERROR: %s rev. %i solutions differ at position %lu: %d vs %d\n",
-        //             _name.c_str(), _revision, i, solution1[i], solution2[i]);
-        //         break;
-        //     }
-        // }        
-        // auto resultCode = resultCode1;
-        // auto solution = solution1;
         _lits.clear();
         _assumptions.clear();
 
@@ -296,9 +212,6 @@ public:
             _old_job_stream->finalize();
             delete _old_job_stream;
             _old_job_stream = nullptr;
-        } else {
-            _job_stream.interrupt();
-            _job_stream.finalize();
         }
     }
 
