@@ -355,7 +355,7 @@ public:
     _params(params), _api(api), _desc(desc), _filename(programFile)
     {
         LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
-        satcheck_mallobt::createCBMCSatSolver = [&]() {
+        satcheck_mallobt::createCBMCSatSolver = [this]() {
             return new CBMCSatConnector("Mallob SAT Solver", _params, _desc);
         };
     }
