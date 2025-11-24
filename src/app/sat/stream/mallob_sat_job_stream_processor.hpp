@@ -99,7 +99,7 @@ public:
             // If no distributed job was submitted yet, we try to avoid this overhead;
             // we wait for a short while if a more lightweight solver finds a solution immediately.
             time = Timer::elapsedSeconds() - time;
-            usleep(1'000'000 * std::max(0.0, 0.05 - time)); // 50 ms minus the time taken to copy the literals
+            usleep(1'000'000 * std::max(0.0, 0.5 - time)); // old: 50 ms minus the time taken to copy the literals
             if (_terminator(t.rev)) {
                 return; // Task has become obsolete in the meantime, so skip solving
             }

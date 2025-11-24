@@ -240,7 +240,6 @@ private:
     
     static void sendInterruptToRank(int rank, nlohmann::json json) {
         json["name"] = "unwind-" + std::to_string(rank);
-        json["interrupt"] = true;
         APIRegistry::sendJobSubmissionToRank(rank, json, [rank, json](JsonInterface::Result res, nlohmann::json& response) {
             assert(res == JsonInterface::Result::ACCEPT);
             LOG(V0_CRIT, "Interrupt job sent to rank %d\n", rank);
@@ -322,19 +321,20 @@ private:
         nlohmann::json interrupt_json = {
             {"user", "admin"},
             {"name", "unwind"},
-            {"files", {_filename}},
-            {"priority", 1.000},
+            // {"files", {_filename}},
+            // {"priority", 1.000},
             {"application", "CBMC"},
+            {"incremental", true},
             {"interrupt", true}
         };
 
-        //for (int i = 0; i < numWorkers; i++) {
-            //if (i == rank) {
-            //    continue;
-            //}
-            //sendInterruptToRank(i, interrupt_json);
-        //}
-        
+        // for (int i = 0; i < numWorkers; i++) {
+        //     if (i == rank) {
+        //        continue;
+        //     }
+        //     sendInterruptToRank(i, interrupt_json);
+        // }
+
         if (!_params.cbmcLog().empty())
         {
             std::ifstream inputFile(_params.cbmcLog() + "_" + std::to_string(unwind));
@@ -348,6 +348,7 @@ private:
             inputFile.close();
         }
         auto result = postprocess(res, true, unwind, -1);
+        Terminator::setTerminating();
         return result; 
     }
 

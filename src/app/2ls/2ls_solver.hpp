@@ -6,6 +6,7 @@
 #include "data/job_description.hpp"
 #include "data/job_result.hpp"
 #include "2ls/2ls_parse_options.h"
+#include "2ls/lib/cbmc/src/solvers/sat/satcheck_mallob.h"
 #include "util/sys/thread_pool.hpp"
 #include <iostream>
 #include <vector>
@@ -21,6 +22,7 @@ private:
     APIConnector &_api;
     JobDescription &_desc;
     std::string _filename;
+    DTaskTracker _dTaskTracker;
 
     std::tuple<int, bool, bool> runCBMC(const std::vector<std::string>& cbmcOptions)
     {
@@ -28,7 +30,7 @@ private:
         int argc = 2 + size_options;
 
         std::vector<const char *> argv;
-        argv.reserve(argc + 1); // +1 for null terminator
+        argv.reserve(argc + 1); 
 
         std::string name = "2ls";
         argv.push_back(name.c_str());
@@ -222,8 +224,9 @@ private:
         });
 
         int res = result_future.get();
-        
-        return postprocess(res);
+        auto result = postprocess(res);
+        Terminator::setTerminating();
+        return result;
     }
 
     bool lastLinesContains(int x, const std::string& filename, const std::string& search) {
@@ -244,10 +247,13 @@ private:
 
 public:
     TwoLSSolver(const Parameters &params, APIConnector &api, JobDescription &desc, const std::string& programFile) : 
-    _params(params), _api(api), _desc(desc), _filename(programFile)
+    _params(params), _api(api), _desc(desc), _filename(programFile), _dTaskTracker(params)
     {
         //_filename = params.monoFilename();
         LOG(V2_INFO, "2LS Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
+        satcheck_mallobt::createCBMCSatSolver = [this]() {
+            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, _dTaskTracker);
+        };
     }
     ~TwoLSSolver() {
         LOG(V2_INFO, "2LS Solver for job #%i with file %s destroyed\n", _desc.getId(), _filename.c_str());

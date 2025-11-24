@@ -1,6 +1,6 @@
 
 # Add CBMC-specific sources to main Mallob executable
-set(2LS_MALLOB_SOURCES)
+set(2LS_MALLOB_SOURCES src/app/sat/solvers/cadical.cpp src/app/sat/solvers/portfolio_solver_interface.cpp)
 set(MALLOB_COREPLUSCOMM_SOURCES ${MALLOB_COREPLUSCOMM_SOURCES} ${2LS_MALLOB_SOURCES} CACHE INTERNAL "")
 
 #message("commons+SAT sources: ${BASE_SOURCES}") # Use to debug
