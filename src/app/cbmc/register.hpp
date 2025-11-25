@@ -32,20 +32,11 @@ void register_mallob_app_cbmc() {
         // Job solution formatter
         [](const Parameters& params, const JobResult& result, const JobProcessingStatistics& stat) {
             auto json = nlohmann::json::array();
-
-            if (result.getSolutionSize() > 0) {
-                //std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
-                LOG_OMIT_PREFIX(V0_CRIT, "t FINAL PROCESSING_TIME: %.3f\n", stat.processingTime);
-                if (!params.cbmcLog().empty())
-                {
-                    std::ofstream outputFile(params.cbmcLog(), std::ios::app);
-                    outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
-                    outputFile.close();
-                }
-            }
             
             json.push_back({
-                {"EXITCODE", result.result == 20 ? 0 : result.result},         
+                {"EXITCODE", result.result == 20 ? 0 : result.result},
+                {"SAT_TIME", CBMCSatConnector::getGlobalSatTime()},
+                {"SAT_CALLS", CBMCSatConnector::getSatCalls()},         
                 {"result", result.result == 10 ? "VERIFICATION FAILED" : 
                     (result.result == 20 ? "VERIFICATION SUCCESSFUL": "UNKNOWN")},
                 {"application", "CBMC"},
@@ -62,6 +53,19 @@ void register_mallob_app_cbmc() {
                 }},
             });
             //LOG(V2_INFO, "Job result: %s\n", json.dump().c_str());
+            
+            if (result.getSolutionSize() > 0) {
+                //std::cout << "t FINAL PROCESSING_TIME: " << stat.processingTime << std::endl;
+                LOG_OMIT_PREFIX(V0_CRIT, "t FINAL PROCESSING_TIME: %.3f\n", stat.processingTime);
+                if (!params.cbmcLog().empty())
+                {
+                    std::ofstream outputFile(params.cbmcLog(), std::ios::app);
+                    outputFile << "t FINAL PROCESSING_TIME: " + std::to_string(stat.processingTime) + "\n";
+                    outputFile.close();
+                }
+                Terminator::setTerminating();
+            }
+
             return json;
         }
     );

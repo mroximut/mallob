@@ -105,7 +105,9 @@ private:
         return std::make_tuple(res, contains_successful, contains_failed);
     }
 
-    JobResult postprocess(int res, bool final, int unwind, int rank = -1) {
+    JobResult postprocess(int res, bool final, int unwind, int rank = -1, 
+                            std::optional<int> sat_calls = std::nullopt, 
+                            std::optional<float> sat_time = std::nullopt) {
         // std::string jobType = _desc.getAppConfiguration().map["__TA"];
         // if (jobType == "false" || jobType == "parent") {
         //     jobType = "FINAL";
@@ -122,16 +124,18 @@ private:
             jobType += " RANK=" + std::to_string(rank);
         }
 
-        LOG_OMIT_PREFIX(V0_CRIT, "s %s EC=%d\n", jobType.c_str(), res);
-        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_TIME: %.3f\n", jobType.c_str(), CBMCSatConnector::getGlobalSatTime());
-        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_CALLS: %d\n", jobType.c_str(), CBMCSatConnector::getSatCalls());
+        float sat_time_val = sat_time.value_or(CBMCSatConnector::getGlobalSatTime());
+        int sat_calls_val = sat_calls.value_or(CBMCSatConnector::getSatCalls());
 
+        LOG_OMIT_PREFIX(V0_CRIT, "s %s EC=%d\n", jobType.c_str(), res);
+        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_TIME: %.3f\n", jobType.c_str(), sat_time_val);
+        LOG_OMIT_PREFIX(V0_CRIT, "t %s SAT_CALLS: %d\n", jobType.c_str(), sat_calls_val);
         if (!_params.cbmcLog().empty() && final)
         {
             std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
             outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
-            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
-            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
+            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(sat_time_val) + "\n";
+            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(sat_calls_val) + "\n";
             outputFile.close();
         }
 
@@ -215,7 +219,7 @@ private:
         return unwind_values[idx];
     }
 
-    static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::tuple<int, int, int>>> promise, 
+    static void sendNextJobToRank(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::tuple<int, int, int, int, float>>> promise, 
                               std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
         int unwind = getNewUnwind(currentUnwind);
         if (unwind == -1 || done->load()) {
@@ -228,8 +232,10 @@ private:
         APIRegistry::sendJobSubmissionToRank(rank, json, [json, promise, done, currentUnwind, rank, unwind](JsonInterface::Result res, nlohmann::json& response) mutable {
             assert(res == JsonInterface::Result::ACCEPT);
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            float sat_time = response["result"]["solution"][0]["SAT_TIME"].get<float>();
+            int sat_calls = response["result"]["solution"][0]["SAT_CALLS"].get<int>();
             if ((unwind == 268435456 || result != 42) && !done->exchange(true)) {
-                promise->set_value(std::tuple<int, int, int>(result, unwind, rank));
+                promise->set_value(std::tuple<int, int, int, int, float>(result, unwind, rank, sat_calls, sat_time));
                 return;
             }
             if (result == 42 && !done->load()) {
@@ -238,13 +244,13 @@ private:
         });
     }
     
-    static void sendInterruptToRank(int rank, nlohmann::json json) {
-        json["name"] = "unwind-" + std::to_string(rank);
-        APIRegistry::sendJobSubmissionToRank(rank, json, [rank, json](JsonInterface::Result res, nlohmann::json& response) {
-            assert(res == JsonInterface::Result::ACCEPT);
-            LOG(V0_CRIT, "Interrupt job sent to rank %d\n", rank);
-        });
-    }
+    // static void sendInterruptToRank(int rank, nlohmann::json json) {
+    //     json["name"] = "unwind-" + std::to_string(rank);
+    //     APIRegistry::sendJobSubmissionToRank(rank, json, [rank, json](JsonInterface::Result res, nlohmann::json& response) {
+    //         assert(res == JsonInterface::Result::ACCEPT);
+    //         LOG(V0_CRIT, "Interrupt job sent to rank %d\n", rank);
+    //     });
+    // }
     // static void sendJobsIncrementally(int rank, nlohmann::json json, std::shared_ptr<std::promise<std::pair<int, int>>> promise,
     //                               std::shared_ptr<std::atomic<bool>> done, std::shared_ptr<std::atomic<int>> currentUnwind) {
     //     while (true) {
@@ -284,8 +290,8 @@ private:
 
     JobResult solveParallel()
     {
-        auto promise = std::make_shared<std::promise<std::tuple<int, int, int>>>();
-        std::shared_future<std::tuple<int, int, int>> result_future(promise->get_future());
+        auto promise = std::make_shared<std::promise<std::tuple<int, int, int, int, float>>>();
+        std::shared_future<std::tuple<int, int, int, int, float>> result_future(promise->get_future());
         auto done = std::make_shared<std::atomic<bool>>(false);
 
         std::string parallelWorkers = _params.parallelUnwind();
@@ -316,17 +322,19 @@ private:
         int res = std::get<0>(result_future.get());
         int unwind = std::get<1>(result_future.get());
         int rank = std::get<2>(result_future.get());
+        int sat_calls = std::get<3>(result_future.get());
+        float sat_time = std::get<4>(result_future.get());
         LOG(V0_CRIT, "Parallel unwind finished with result %d and unwind value %d\n", res, unwind);
 
-        nlohmann::json interrupt_json = {
-            {"user", "admin"},
-            {"name", "unwind"},
-            // {"files", {_filename}},
-            // {"priority", 1.000},
-            {"application", "CBMC"},
-            {"incremental", true},
-            {"interrupt", true}
-        };
+        // nlohmann::json interrupt_json = {
+        //     {"user", "admin"},
+        //     {"name", "unwind"},
+        //     // {"files", {_filename}},
+        //     // {"priority", 1.000},
+        //     {"application", "CBMC"},
+        //     {"incremental", true},
+        //     {"interrupt", true}
+        // };
 
         // for (int i = 0; i < numWorkers; i++) {
         //     if (i == rank) {
@@ -347,8 +355,7 @@ private:
             outputFile.close();
             inputFile.close();
         }
-        auto result = postprocess(res, true, unwind, -1);
-        Terminator::setTerminating();
+        auto result = postprocess(res, true, unwind, -1, std::make_optional(sat_calls), std::make_optional(sat_time));    
         return result; 
     }
 

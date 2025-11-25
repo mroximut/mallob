@@ -115,7 +115,8 @@ private:
         return std::make_tuple(res, contains_successful, contains_failed);
     }
 
-    JobResult postprocess(int res) {
+    JobResult postprocess(int res, std::optional<float> sat_time = std::nullopt,
+                          std::optional<int> sat_calls = std::nullopt) {
         JobResult r;
         std::string jobType = _desc.getAppConfiguration().map["__TA"];
         if (jobType == "false" || jobType == "parent") {
@@ -123,16 +124,18 @@ private:
             r.setSolution(std::vector<int>({-1})); 
         }
 
-        std::cout << "s " << jobType << " EC=" << res << std::endl;
-        std::cout << "t " << jobType << " SAT_TIME: " << CBMCSatConnector::getGlobalSatTime() << std::endl;
-        std::cout << "t " << jobType << " SAT_CALLS: " << CBMCSatConnector::getSatCalls() << std::endl;
+        float sat_time_val = sat_time.value_or(CBMCSatConnector::getGlobalSatTime());
+        int   sat_calls_val = sat_calls.value_or(CBMCSatConnector::getSatCalls());
 
+        std::cout << "s " << jobType << " EC=" << res << std::endl;
+        std::cout << "t " << jobType << " SAT_TIME: " << sat_time_val << std::endl;
+        std::cout << "t " << jobType << " SAT_CALLS: " << sat_calls_val << std::endl;
         if (!_params.cbmcLog().empty())
         {
             std::ofstream outputFile(_params.cbmcLog(), std::ios::app);
             outputFile << "s " + jobType + " EC=" + std::to_string(res) + "\n";
-            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(CBMCSatConnector::getGlobalSatTime()) + "\n";
-            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(CBMCSatConnector::getSatCalls()) + "\n";
+            outputFile << "t " + jobType + " SAT_TIME: " + std::to_string(sat_time_val) + "\n";
+            outputFile << "t " + jobType + " SAT_CALLS: " + std::to_string(sat_calls_val) + "\n";
             outputFile.close();
         }
 
@@ -158,6 +161,7 @@ private:
     JobResult solveTerminationAnalysis() {
 
         auto promise = std::make_shared<std::promise<int>>();
+        auto sat_stats_promise = std::make_shared<std::promise<std::tuple<float, int>>>();
         std::shared_future<int> result_future(promise->get_future());
         auto first_finished = std::make_shared<std::atomic<bool>>(false);
         auto set_done = std::make_shared<std::atomic<bool>>(false);
@@ -182,10 +186,12 @@ private:
         json2["configuration"]["__TA"] = "nontermination";
 
         // send 1st sub-job to rank 0
-        APIRegistry::sendJobSubmissionToRank(0, json1, [promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
+        APIRegistry::sendJobSubmissionToRank(0, json1, [promise, sat_stats_promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
             assert(res == JsonInterface::Result::ACCEPT);
             LOG(V2_INFO, "Received response for job 1: %s\n", response.dump().c_str());
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            float sat_time = response["result"]["solution"][0]["SAT_TIME"].get<float>();
+            int sat_calls = response["result"]["solution"][0]["SAT_CALLS"].get<int>();
             if (!first_finished->exchange(true)) // I am the first to finish 
             {
                 if (result != 5) {
@@ -199,14 +205,17 @@ private:
             {  
                 if (set_done->exchange(true)) return;
                 promise->set_value(result);
+                sat_stats_promise->set_value(std::make_tuple(sat_time, sat_calls));
             }
         });
         
         // send 2nd sub-job to rank 1
-        APIRegistry::sendJobSubmissionToRank(1, json2, [promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
+        APIRegistry::sendJobSubmissionToRank(1, json2, [promise, sat_stats_promise, first_finished, set_done](JsonInterface::Result res, nlohmann::json& response) mutable {
             assert(res == JsonInterface::Result::ACCEPT);
             LOG(V2_INFO, "Received response for job 2: %s\n", response.dump().c_str());
             int result = response["result"]["solution"][0]["EXITCODE"].get<int>();
+            float sat_time = response["result"]["solution"][0]["SAT_TIME"].get<float>();
+            int sat_calls = response["result"]["solution"][0]["SAT_CALLS"].get<int>();
             if (!first_finished->exchange(true)) // I am the first to finish 
             {
                 if (result != 5) {
@@ -220,12 +229,14 @@ private:
             {  
                 if (set_done->exchange(true)) return;
                 promise->set_value(result);
+                sat_stats_promise->set_value(std::make_tuple(sat_time, sat_calls));
             }
         });
 
         int res = result_future.get();
-        auto result = postprocess(res);
-        Terminator::setTerminating();
+        auto sat_stats = sat_stats_promise->get_future().get();
+        auto result = postprocess(res, std::make_optional(std::get<0>(sat_stats)), 
+                                    std::make_optional(std::get<1>(sat_stats)));
         return result;
     }
 
