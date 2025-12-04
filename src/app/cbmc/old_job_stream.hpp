@@ -83,22 +83,22 @@ public:
         _json_base["configuration"]["__XU"] = "-1";
         _json_base["configuration"]["__NV"] = std::to_string(_nb_vars);
         _json_base["configuration"]["__NC"] = std::to_string(_nb_clauses);
-        std::ofstream os("/tmp/oldjob.cnf", std::ios::app);
-        if (!os) return;
-        os << "c revision " << _subjob_counter << "\n";
-        os << "c new clauses " << newLiterals.size() << "\n";
-        os << "c assumptions " << assumptions.size() << "\n";
-        for (size_t i = 0; i < newLiterals.size(); ++i) {
-            int lit = newLiterals[i];
-            os << lit;
-            os << (lit == 0 ? "\n" : " ");
-        }
-        if (!assumptions.empty()) {
-            os << "a";
-            for (int a : assumptions) os << " " << a;
-            os << "\n";
-        }
-        os.close();
+        // std::ofstream os("/tmp/oldjob.cnf", std::ios::app);
+        // if (!os) return;
+        // os << "c revision " << _subjob_counter << "\n";
+        // os << "c new clauses " << newLiterals.size() << "\n";
+        // os << "c assumptions " << assumptions.size() << "\n";
+        // for (size_t i = 0; i < newLiterals.size(); ++i) {
+        //     int lit = newLiterals[i];
+        //     os << lit;
+        //     os << (lit == 0 ? "\n" : " ");
+        // }
+        // if (!assumptions.empty()) {
+        //     os << "a";
+        //     for (int a : assumptions) os << " " << a;
+        //     os << "\n";
+        // }
+        // os.close();
 
         if (_incremental && _json_base.contains("name")) {
             _json_base["precursor"] = _username + std::string(".") + _json_base["name"].get<std::string>();
@@ -111,6 +111,7 @@ public:
         newLiterals.push_back(INT32_MAX);
         for (int a : assumptions) newLiterals.push_back(a);
         newLiterals.push_back(0);
+        newLiterals.push_back(INT32_MIN);
         StaticStore<std::vector<int>>::insert(_json_base["name"].get<std::string>(), std::move(newLiterals));
         copy["internalliterals"] = _json_base["name"].get<std::string>();
         //copy["literals"] = std::move(newLiterals);

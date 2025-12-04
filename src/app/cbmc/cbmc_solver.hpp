@@ -364,8 +364,12 @@ public:
     _params(params), _api(api), _desc(desc), _filename(programFile), _dTaskTracker(params)
     {
         LOG(V2_INFO, "CBMC Solver initialized for job #%i with file %s\n", desc.getId(), _filename.c_str());
-        satcheck_mallobt::createCBMCSatSolver = [this]() {
-            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, _dTaskTracker);
+        bool oldJobStream = false;
+        if (!_params.noincsat().empty()) {
+            oldJobStream = true;
+        }
+        satcheck_mallobt::createCBMCSatSolver = [this, oldJobStream]() {
+            return new CBMCSatConnector("Mallob SAT Solver", _params, _desc, _dTaskTracker, oldJobStream);
         };
     }
     ~CBMCSolver() {

@@ -75,7 +75,7 @@ public:
         });
 
         } else {
-            _old_job_stream = new OldJobStream(api, _stream_id, true);
+            _old_job_stream = new OldJobStream(api, _stream_id, false);
         }
     }
 

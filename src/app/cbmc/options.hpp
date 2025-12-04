@@ -13,3 +13,4 @@ OPT_STRING(cbmcOptions, "cbmc-opts", "", "", "CBMC options to be passed to the s
 OPT_STRING(unwindLoops, "unwind-loops", "", "", "unwind loops")
 OPT_STRING(parallelUnwind, "parallel-unwind", "", "", "parallel execution of unwinding jobs")
 OPT_STRING(cbmcLog, "cbmc-log", "", "", "log file for CBMC output")
+OPT_STRING(noincsat, "noincsat", "", "", "Use incremental CBMC solving")
